@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<Description>Reader for PRC (ISO 14739-1) files.</Description>
+		<IsAotCompatible>true</IsAotCompatible>
+		<IsTrimmable>true</IsTrimmable>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<Version>1.0.0</Version>
+		<PackageProjectUrl>https://github.com/CalyPdf/Caly.Rendering.Scene3D</PackageProjectUrl>
+		<PackageIcon>Icon.png</PackageIcon>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<RepositoryUrl>https://github.com/CalyPdf/Caly.Rendering.Scene3D</RepositoryUrl>
+		<PackageTags>prc;u3d;pdf;3d;render</PackageTags>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Caly.Rendering.Scene3D\Caly.Rendering.Scene3D.csproj" />
+		<InternalsVisibleTo Include="Caly.Rendering.Scene3D.Tests" Key="$(Scene3DPublicKey)" />
+		<InternalsVisibleTo Include="Caly.Rendering.Scene3D.Benchmarks" Key="$(Scene3DPublicKey)" />
+		<InternalsVisibleTo Include="scene3d-tool" Key="$(Scene3DPublicKey)" />
+	</ItemGroup>
+
+</Project>

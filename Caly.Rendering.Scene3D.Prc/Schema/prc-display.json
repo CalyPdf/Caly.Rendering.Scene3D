@@ -1,0 +1,237 @@
+{
+  // What Caly.Rendering.Scene3D.Prc reads of the format described by prc.json, and what it keeps.
+  // Input of tools/Caly.Rendering.Scene3D.Prc.Generator; see its PrcReaderGenerator for the meaning of each part.
+
+  // The entities sections start with. Everything they lead to is read, field by field.
+  "roots": [
+    "Schema",
+    "PRC_TYPE_ASM_FileStructureGlobals",
+    "PRC_TYPE_ASM_FileStructureTree",
+    "PRC_TYPE_ASM_FileStructureTessellation",
+    "PRC_TYPE_ASM_ModelFile",
+
+    // The exact geometry: read when an item that has no tessellation needs it (the bodies of its topological contexts).
+    "PRC_TYPE_ASM_FileStructureGeometry",
+
+    // Called by the hand-written reader of the compressed tessellation.
+    "CompressedTextureParameter"
+  ],
+
+  // Structures read by hand-written code ("kept": it returns the entity; "walked": it reads past it).
+  "manual": {
+    "PRC_TYPE_TESS_3D_Compressed": "kept",
+    "VertexColors": "kept",
+
+    // Compressed bodies: almost every field of their structures has a width the file gives (vbr), which generated code cannot read.
+    "PRC_TYPE_TOPO_BrepDataCompress": "kept",
+    "PRC_TYPE_TOPO_SingleWireBodyCompress": "walked",
+
+    // The reference does not read this surface either.
+    "PRC_TYPE_SURF_Blend04": "walked"
+  },
+
+  // What is kept, per structure: the fields listed, or "*" for all. Anything else is read and dropped.
+  "keep": {
+    "Schema": [ "schemas" ],
+    "Entity_schema_definition": [ "entity_type", "schema_tokens" ],
+
+    // What every entity starts with: its name, and for most its graphics.
+    "Name": [ "name" ],
+    "ContentPRCBase": [ "entity_name" ],
+    "ContentPRCRefBase": [ "*" ],
+    "PRC_TYPE_ROOT_PRCBaseWithGraphics": [ "base", "graphics_content" ],
+    "GraphicsContent": [ "*" ],
+
+    // The model file: where the assembly starts, and its unit.
+    "PRC_TYPE_ASM_ModelFile": [ "units_from_cad_file", "units_in_mm", "product_occurrences" ],
+    "ProductOccurrenceReference": [ "*" ],
+    "UniqueId": [ "*" ],
+
+    // Globals: what styles are made of.
+    "PRC_TYPE_ASM_FileStructureGlobals": [ "global_data" ],
+    "FileStructureInternalGlobalData": [ "colors", "pictures", "textures", "materials", "styles", "ref_coords" ],
+    "RgbColor": [ "*" ],
+    "PRC_TYPE_GRAPH_Picture": [ "format", "biased_uncompressed_file_index", "pixel_width", "pixel_height" ],
+    "PRC_TYPE_GRAPH_TextureDefinition": [ "biased_picture_index", "texture_mapping_type", "texture_mapping_operator", "texture_function", "texture_application_mode", "texture_transformation", "alpha_test_reference", "texture_wrapping_mode_s", "texture_wrapping_mode_t" ],
+    "Material": [ "id" ],
+    "PRC_TYPE_GRAPH_Material": [
+      "biased_ambient_index", "biased_diffuse_index", "biased_emissive_index", "biased_specular_index",
+      "shininess", "ambient_alpha", "diffuse_alpha", "emissive_alpha", "specular_alpha"
+    ],
+    "PRC_TYPE_GRAPH_TextureApplication": [ "biased_material_generic_index", "biased_texture_definition_index", "biased_next_texture_index", "biased_uv_coordinates_index" ],
+    "PRC_TYPE_GRAPH_Style": [ "is_material", "biased_color_index", "is_transparency", "transparency" ],
+    "PRC_TYPE_RI_CoordinateSystem": [ "transform" ],
+    "PRC_TYPE_MISC_CartesianTransformation": [ "transform" ],
+    "PRC_TYPE_MISC_GeneralTransformation": [ "general_transform" ],
+    "Transformation3D": [ "*" ],
+    "Vector3D": [ "*" ],
+    "Vector2D": [ "*" ],
+    "Transformation2D": [ "*" ],
+    "PRC_TYPE_GRAPH_TextureTransformation": [ "invert_s", "invert_t", "transform" ],
+
+    // The tree: occurrences, parts, and the items of a part that can have a mesh.
+    "PRC_TYPE_ASM_FileStructureTree": [ "parts", "products", "internal_data" ],
+    "PRC_TYPE_ASM_FileStructure": [ "index_product_occurrence" ],
+    "PRC_TYPE_ASM_ProductOccurrence": [ "base", "references_product_occurrence", "product_behavior", "product_information", "location", "markups" ],
+    // The markups of an occurrence (notes, dimensions): the entities each draws with are tessellations of their own kind.
+    "MarkupData": [ "markups" ],
+    "PRC_TYPE_MKP_Markup": [ "base", "biased_index_tessellation" ],
+    "ReferencesOfProductOccurrence": [ "*" ],
+    "FileIdentifier": [ "*" ],
+    "ProductInformation": [ "*" ],
+    "PRC_TYPE_ASM_PartDefinition": [ "base", "representation_items" ],
+    "PRC_TYPE_RI_RepresentationItem": [ "data" ],
+    "PRC_TYPE_RI_BrepModel": [ "item_content", "exact_geometry", "index_topological_context", "index_body" ],
+    "PRC_TYPE_RI_PolyBrepModel": [ "item_content" ],
+    "PRC_TYPE_RI_Set": [ "item_content", "representation_items" ],
+    "RepresentationItemContent": [ "*" ],
+
+    // The exact geometry: the bodies of each topological context, as far as they are turned into something.
+    "PRC_TYPE_ASM_FileStructureGeometry": [ "exact_geometry" ],
+    "FileStructureExactGeometry": [ "topo_contexts" ],
+    "PRC_TYPE_TOPO_Context": [ "tolerance", "has_scale", "scale", "bodies" ],
+    "PRC_TYPE_TOPO_Body": [ "id" ],
+
+    // Uncompressed bodies (PRC_TYPE_TOPO_BrepData): the topology down to the vertices, with the pointers as written (an entity is
+    // stored where it is first used, and named by its number after that), and the curves and surfaces the edges and faces lie on.
+    "PRC_TYPE_TOPO_BrepData": [ "connex" ],
+    "PtrTopology": [ "*" ],
+    "PRC_TYPE_TOPO": [ "id" ],
+    "PRC_TYPE_TOPO_Connex": [ "shells" ],
+    "PRC_TYPE_TOPO_Shell": [ "is_closed", "faces" ],
+    "FacesInShell": [ "*" ],
+    "PRC_TYPE_TOPO_Face": [ "surface_geometry", "is_trimmed", "trimmed_surface", "index_of_outer_loop", "loops" ],
+    "Domain": [ "*" ],
+    "PRC_TYPE_TOPO_Loop": [ "loop_orientation", "coedge" ],
+    "CoedgeInLoop": [ "*" ],
+    "PRC_TYPE_TOPO_CoEdge": [ "ptr_topology", "ptr_curves", "coedge_orientation", "uv_orientation" ],
+    "PRC_TYPE_TOPO_Edge": [ "wire_edge", "start_vertex", "end_vertex" ],
+    "PRC_TYPE_TOPO_WireEdge": [ "curve" ],
+    "ContentWireEdge": [ "ptr_curve", "is_trimmed", "trim_interval" ],
+    "PRC_TYPE_TOPO_UniqueVertex": [ "vertex" ],
+    "PRC_TYPE_TOPO_MultipleVertex": [ "points" ],
+    "PtrCurve": [ "*" ],
+    "PRC_TYPE_CRV": [ "id" ],
+    "PtrSurface": [ "*" ],
+    "ContentCurve": [ "is_3d_flag" ],
+    "Parameterization": [ "*" ],
+    "Interval": [ "*" ],
+    "PRC_TYPE_CRV_Line": [ "curve_data", "transform3d", "parameterization" ],
+    "PRC_TYPE_CRV_Circle": [ "curve_data", "transform3d", "parameterization", "radius" ],
+    "PRC_TYPE_CRV_Ellipse": [ "curve_data", "transform3d", "parameterization", "rx", "ry" ],
+    "PRC_TYPE_CRV_NURBS": [ "curve_data", "is_rational", "degree", "p", "u" ],
+    "ControlPointsNurbsCrv": [ "*" ],
+    "PRC_TYPE_CRV_Composite": [ "curve_data", "transform3d", "parameterization", "subcurves", "is_closed" ],
+    "CompositeSubCurve": [ "*" ],
+    "PRC_TYPE_CRV_PolyLine": [ "curve_data", "transform3d", "parameterization", "points_3d" ],
+    "PRC_TYPE_CRV_Intersection": [ "curve_data", "transform3d", "surface_1", "surface_2", "crossings" ],
+    "CrossingPointsCrvIntersection": [ "position", "parameter" ],
+    "PRC_TYPE_SURF_NURBS": [ "is_rational", "du", "dv", "highest_index_of_control_points_in_u", "highest_index_of_control_points_in_v", "p3", "p4", "ku", "kv" ],
+    "ControlPointsNurbsSurf3": [ "*" ],
+    "ControlPointsNurbsSurf4": [ "*" ],
+
+    // The surface of a compressed face that lies on an uncompressed one (PRC_HCG_AnaGenericFace): the analytic kinds, with their placement.
+    "PRC_TYPE_SURF": [ "id" ],
+    "PRC_TYPE_SURF_Plane": [ "transform", "u_parameter_coeff_a", "v_parameter_coeff_a", "u_parameter_coeff_b", "v_parameter_coeff_b" ],
+    "PRC_TYPE_SURF_Cylinder": [ "transform", "parameterization", "radius" ],
+    "PRC_TYPE_SURF_Cone": [ "transform", "parameterization", "radius", "semi_angle" ],
+    "PRC_TYPE_SURF_Sphere": [ "transform", "parameterization", "radius" ],
+    "PRC_TYPE_SURF_Torus": [ "transform", "parameterization", "major_radius", "minor_radius" ],
+    // How a surface's parameters are turned into its own (the 2D curves of uncompressed coedges are in them).
+    "UVParameterization": [ "swap_uv", "suface_domain", "u_param_coeff_a", "v_param_coeff_a", "u_param_coeff_b", "v_param_coeff_b" ],
+    "Transformation3DWithBit": [ "transformation" ],
+
+    // Tessellations.
+    "ContentBaseTessData": [ "coordinates" ],
+    "PRC_TYPE_ASM_FileStructureTessellation": [ "tess" ],
+    "PRC_TYPE_TESS": [ "id" ],
+    "PRC_TYPE_TESS_3D": [
+      "tessellation_coordinates", "has_faces", "has_loops", "must_calculate_normals", "crease_angle",
+      "normal_coordinates", "wire_indices", "triangulated_index_array", "face_tessellation_data", "texture_coordinates"
+    ],
+    "PRC_TYPE_TESS_Markup": [ "tessellation_coordinates", "code_numbers" ],
+    "PRC_TYPE_TESS_Face": [
+      "line_attributes", "start_of_wire_data", "sizes_wire", "used_entities_flag", "start_triangulated", "triangulateddata",
+      "number_of_textured_coordinate_indices", "vertex_color_data", "behavior"
+    ]
+  },
+
+  // Kept structures that are values (C# structs): small, and stored in arrays or in their owner
+  // without an object each.
+  "valueTypes": [
+    "Name", "ContentPRCBase", "ContentPRCRefBase", "PRC_TYPE_ROOT_PRCBaseWithGraphics", "GraphicsContent",
+    "ProductOccurrenceReference", "UniqueId", "RgbColor", "Vector3D", "FileIdentifier", "ProductInformation", "MarkupData",
+    "RepresentationItemContent",
+    "ControlPointsNurbsCrv", "ControlPointsNurbsSurf3", "ControlPointsNurbsSurf4", "Interval", "CoedgeInLoop", "FacesInShell", "CompositeSubCurve", "CrossingPointsCrvIntersection"
+  ],
+
+  // C# for what prc.json does in Rust at a field ("Structure.field", after the field is read) or
+  // around a structure ("Structure:enter", "Structure:leave").
+  "hooks": {
+    "Name.name": "name = ctx.ResolveName(same_name, name);",
+    "PRC_TYPE_ROOT_PRCBaseWithGraphics.graphics_content": "graphics_content = ctx.ResolveGraphics(same_graphics, graphics_content);",
+    "PRC_TYPE_TESS_Face.triangulateddata": "ctx.SetFace(used_entities_flag, triangulateddata);",
+    "PRC_TYPE_TESS_3D_Wire:enter": "ctx.EnterWire();",
+    "PRC_TYPE_TESS_3D_Wire:leave": "ctx.LeaveWire();",
+    "PRC_TYPE_TESS_3D_Wire.wire_indexes": "ctx.SetWireIndices(wire_indexes);",
+    "ContentBaseTessData.number_of_coordinates": "ctx.SetCoordinateCount(number_of_coordinates);",
+
+    // Exact geometry: a curve says whether it lives in 3D or in a surface's (u, v), and its fields follow from that.
+    "ContentCurve.is_3d_flag": "ctx.CurveIs3D = is_3d_flag;",
+    "PRC_TYPE_CRV_NURBS.is_rational": "ctx.NurbsCurveIsRational = is_rational;",
+
+    // A body has a bounding box when its behaviour says it was evaluated or precise (PDF Association issue #715).
+    "ContentBody.bounding_box_behavior": "ctx.BodyHasBoundingBox = (bounding_box_behavior & 3) != 0;"
+  },
+
+  // Checks and assertions of the reference that this reader does not make: the values are not used.
+  "ignoredHooks": [
+    "PRC_TYPE_CRV_Parabola._type",
+    "PRC_TYPE_CRV_Offset.curve_data",
+    "PRC_TYPE_CRV_Hyperbola._type",
+    "PRC_TYPE_CRV_Helix._type",
+    "PRC_TYPE_CRV_NURBS.u",
+    "PRC_TYPE_CRV_Blend02Boundary.curve_data",
+    "BinaryTextureData.last_integer_used_bit_number",
+    "CompressedTextureParameter.texture_parameters_tolerance",
+    "CompressedTextureParameter.texture_parameters_size",
+    "CompressedTextureParameter.texture_parameters",
+    "PRC_TYPE_GRAPH_TextureDefinition.blend_src",
+    "PRC_TYPE_GRAPH_TextureDefinition.number_of_texture_mapping_attributes_components",
+    "PRC_TYPE_GRAPH_TextureDefinition.number_of_texture_mapping_attributes_intensities",
+    "PRC_TYPE_GRAPH_TextureDefinition.texture_dimension",
+    "PRC_TYPE_GRAPH_TextureTransformation.transform_2d",
+    "PRC_TYPE_MISC_ReferenceOnTopology.type_of_entity"
+  ],
+
+  // C# for each method of the reference's parsing context that conditions and sizes call.
+  "contextCalls": {
+    "get_authoring_version": "ctx.AuthoringVersion",
+    "get_num_fsi": "ctx.FileStructureCount",
+    "VertexColors_get_number_of_colors": "ctx.VertexColorCount",
+    "TESS_3D_Wire__is_inside": "ctx.InsideWire",
+    "ContentCurve_is_3d_flag": "ctx.CurveIs3D",
+    "PRC_TYPE_CRV_NURBS_is_rational": "ctx.NurbsCurveIsRational",
+    "ContentBody_has_bounding_box": "ctx.BodyHasBoundingBox"
+  },
+
+  // Text of conditions that names a value inside a structure read earlier, said with what the hook of that value set.
+  "rewrites": {
+    "self.curve_data.is_3d_flag.value": "_ctx.ContentCurve_is_3d_flag",
+    "have_bbox(base.bounding_box_behavior.value)": "_ctx.ContentBody_has_bounding_box"
+  },
+
+  // The named constants conditions use (ISO 14739-1; values as in prc-rs, src/constants.rs).
+  "constants": {
+    "PRC_TRANSFORMATION_Translate": 1,
+    "PRC_TRANSFORMATION_Rotate": 2,
+    "PRC_TRANSFORMATION_Mirror": 4,
+    "PRC_TRANSFORMATION_Scale": 8,
+    "PRC_TRANSFORMATION_NonUniformScale": 16,
+    "PRC_TRANSFORMATION_NonOrtho": 32,
+    "PRC_TRANSFORMATION_Homogeneous": 64,
+    "TextureApplicationMode::AlphaTest": 2,
+    "TextureMappingType::Operator": 3,
+    "TextureFunction::Blend": 3
+  }
+}

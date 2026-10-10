@@ -1,15 +1,15 @@
 <Project>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)Scene3D.snk</AssemblyOriginatorKeyFile>
-    <Scene3DPublicKey>0024000004800000940000000602000000a400005253413100040000010001002d5ef9340a601fb72ebfb6e10c160a205e38e5680b44fc3c03a6d112e4fce37ff28e96807402c9faa8783f6c58874c0bcfa09e274e8111fd37d3087ee9ca4445bece4360098795c63b3e7572bd1af184a1e7856e8bb76517e24cb0d4a5b2866be52c33061dfb9f7d8275cf3130482982d73de35410e5c7b482a4a8c0fbca09b8</Scene3DPublicKey>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)Caly.Rendering.Scene3D.snk</AssemblyOriginatorKeyFile>
+    <Scene3DPublicKey>00240000048000009400000006020000002400005253413100040000010001002d5ef9340a601fb72ebfb6e10c160a205e38e5680b44fc3c03a6d112e4fce37ff28e96807402c9faa8783f6c58874c0bcfa09e274e8111fd37d3087ee9ca4445bece4360098795c63b3e7572bd1af184a1e7856e8bb76517e24cb0d4a5b2866be52c33061dfb9f7d8275cf3130482982d73de35410e5c7b482a4a8c0fbca09b8</Scene3DPublicKey>
     <Version>0.1.0</Version>
     <Authors>BobLd</Authors>
     <Copyright>Copyright (c) BobLd</Copyright>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Caly.Rendering.Scene3D\Caly.Rendering.Scene3D.csproj" />
+    <ProjectReference Include="..\Caly.Rendering.Scene3D.U3D\Caly.Rendering.Scene3D.U3D.csproj" />
+    <ProjectReference Include="..\Caly.Rendering.Scene3D.Prc\Caly.Rendering.Scene3D.Prc.csproj" />
+  </ItemGroup>
+
+</Project>

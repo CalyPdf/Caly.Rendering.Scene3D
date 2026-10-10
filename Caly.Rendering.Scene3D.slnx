@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="Caly.Rendering.Scene3D.Benchmarks/Caly.Rendering.Scene3D.Benchmarks.csproj" />
+  <Project Path="Caly.Rendering.Scene3D.Prc/Caly.Rendering.Scene3D.Prc.csproj" />
+  <Project Path="Caly.Rendering.Scene3D.Tests/Caly.Rendering.Scene3D.Tests.csproj" />
+  <Project Path="Caly.Rendering.Scene3D.U3D/Caly.Rendering.Scene3D.U3D.csproj" />
+  <Project Path="Caly.Rendering.Scene3D/Caly.Rendering.Scene3D.csproj" />
+  <Folder Name="/tools/">
+    <Project Path="tools/Caly.Rendering.Scene3D.Prc.Generator/Caly.Rendering.Scene3D.Prc.Generator.csproj" />
+    <Project Path="tools/Caly.Rendering.Scene3D.Tool/Caly.Rendering.Scene3D.Tool.csproj" />
+  </Folder>
+</Solution>
