@@ -5,3 +5,9 @@ obj/
 *.user
 BenchmarkDotNet.Artifacts/
 TestResults/
+tools/scripts/issues/
+tools/scripts/gltf-validate/node_modules/
+oracle.md
+oracle.json
+*.reference.trace
+*.ours.trace

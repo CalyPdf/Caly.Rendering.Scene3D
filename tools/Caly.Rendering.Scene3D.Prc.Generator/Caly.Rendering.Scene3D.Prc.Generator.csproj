@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Development tool: writes Caly.Rendering.Scene3D.Prc/Generated/PrcReaders.g.cs from the machine-readable
+    description of the format (Schema/prc.json, from prc-rs) and what this library keeps of it
+    (Schema/prc-display.json). Run it (dotnet run, with this project) after changing either. The
+    output is checked in; a test fails when it no longer matches its inputs.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>scene3d-prc-generator</AssemblyName>
+    <RootNamespace>Caly.Rendering.Scene3D.Prc.Generator</RootNamespace>
+  </PropertyGroup>
+
+</Project>

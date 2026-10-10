@@ -1,0 +1,22 @@
+name: Windows
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    uses: ./.github/workflows/unit-tests.yml
+    with:
+      matrix: |
+        {
+          "include": [
+            { "runner": "windows-2022",   "os": "windows", "arch": "x64",   "framework": "net8.0" },
+            { "runner": "windows-2022",   "os": "windows", "arch": "x64",   "framework": "net10.0" },
+            { "runner": "windows-11-arm", "os": "windows", "arch": "arm64", "framework": "net8.0" },
+            { "runner": "windows-11-arm", "os": "windows", "arch": "arm64", "framework": "net10.0" }
+          ]
+        }

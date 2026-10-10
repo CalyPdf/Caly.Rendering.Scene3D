@@ -1,0 +1,75 @@
+name: Unit Tests
+
+# Reusable workflow. Triggered by the per-platform caller workflows
+# (unit-tests-windows.yml, unit-tests-linux.yml, unit-tests-macos.yml), each of which
+# passes its own matrix. Splitting by platform gives one status badge per OS.
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: 'Matrix (JSON) of runner/os/arch/framework combinations to test.'
+        required: true
+        type: string
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  TEST_PROJECT: Caly.Rendering.Scene3D.Tests/Caly.Rendering.Scene3D.Tests.csproj
+
+jobs:
+  test:
+    name: ${{ matrix.os }}-${{ matrix.arch }} / ${{ matrix.framework }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(inputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # 8.0.x provides the runtime for the net8.0 leg; 10.0.x builds everything.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: NuGet cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore
+        run: dotnet restore ${{ env.TEST_PROJECT }}
+
+      - name: Build
+        run: >
+          dotnet build ${{ env.TEST_PROJECT }}
+          --framework ${{ matrix.framework }}
+          --configuration Release
+          --no-restore
+
+      # The corpus tests (SCENE3D_U3D_CORPUS, SCENE3D_PRC_CORPUS, CALY_3D_SAMPLES, ...) need sample
+      # sets that are not in the repository; without their variables they do nothing.
+      - name: Test
+        run: >
+          dotnet test ${{ env.TEST_PROJECT }}
+          --framework ${{ matrix.framework }}
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.framework }}
+          path: ./TestResults/**/*.trx
+          if-no-files-found: ignore

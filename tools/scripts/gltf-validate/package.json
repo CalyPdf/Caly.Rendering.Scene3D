@@ -1,0 +1,9 @@
+{
+  "name": "gltf-validate",
+  "private": true,
+  "description": "Runs the Khronos glTF-Validator over the GLB files Scene3D exports (development check only).",
+  "type": "module",
+  "dependencies": {
+    "gltf-validator": "2.0.0-dev.3.10"
+  }
+}
