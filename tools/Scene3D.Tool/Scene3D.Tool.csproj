@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>scene3d-tool</AssemblyName>
+    <RootNamespace>Scene3D.Tool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Scene3D\Scene3D.csproj" />
+    <ProjectReference Include="..\..\src\Scene3D.U3D\Scene3D.U3D.csproj" />
+  </ItemGroup>
+
+</Project>

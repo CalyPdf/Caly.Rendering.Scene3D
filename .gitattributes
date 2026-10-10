@@ -1,0 +1,7 @@
+* text=auto
+*.cs text eol=crlf
+*.u3d binary
+*.snk binary
+*.glb binary
+*.png binary
+*.idtf -text

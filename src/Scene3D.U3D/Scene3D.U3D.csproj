@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Reader for Universal 3D (ECMA-363) files.</Description>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scene3D\Scene3D.csproj" />
+    <InternalsVisibleTo Include="Scene3D.Tests" Key="$(Scene3DPublicKey)" />
+    <InternalsVisibleTo Include="Scene3D.Benchmarks" Key="$(Scene3DPublicKey)" />
+  </ItemGroup>
+
+</Project>

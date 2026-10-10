@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Format-neutral 3D scene model with a GLB writer.</Description>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Scene3D.U3D" Key="$(Scene3DPublicKey)" />
+    <InternalsVisibleTo Include="Scene3D.Tests" Key="$(Scene3DPublicKey)" />
+  </ItemGroup>
+
+</Project>
