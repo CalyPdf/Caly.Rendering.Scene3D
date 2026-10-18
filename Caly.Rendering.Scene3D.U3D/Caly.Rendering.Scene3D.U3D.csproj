@@ -21,4 +21,11 @@
 		<InternalsVisibleTo Include="Caly.Rendering.Scene3D.Benchmarks" Key="$(Scene3DPublicKey)" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <None Include="..\Icon.png">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
 </Project>
