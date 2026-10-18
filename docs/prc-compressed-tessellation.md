@@ -2,7 +2,7 @@
 
 # Compressed tessellation: the rules as settled (2026-10-11, the made axes corrected 2026-10-12)
 
-What the throwaway prototype (`tests/Scene3D.Tests/ZzDecodeProbe.cs`, never committed) does with its
+What the throwaway prototype (`Caly.Rendering.Scene3D.Tests/ZzDecodeProbe.cs`, never committed) does with its
 default options, and where each rule comes from. The real decoder is written from this, test first.
 Sources: D = the 2009 draft (7.8.9, annex 12.3, 11.1); C = the corpus; I = PDF Association issues
 (#773, #540, #436, #750, #772, #774, #775 and, by the owner's decision of 2026-10-11, the
