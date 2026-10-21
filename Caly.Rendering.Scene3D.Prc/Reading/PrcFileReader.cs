@@ -6,7 +6,7 @@ using Caly.Rendering.Scene3D.Prc.Schema;
 namespace Caly.Rendering.Scene3D.Prc;
 
 /// <summary>How far the reading of one section went: a section read correctly ends in its last byte.</summary>
-/// <param name="Name">The reference reader's name of the section: Global, Tree, Tessellation or ModelFile.</param>
+/// <param name="Name">The reference reader's name of the section: Global, Tree, Tessellation, Geometry, ExtraGeometry or ModelFile.</param>
 /// <param name="FileStructure">The file structure the section belongs to; -1 for the model file.</param>
 /// <param name="TotalBits">The size of the inflated section.</param>
 /// <param name="ConsumedBits">The bits read.</param>
@@ -39,6 +39,12 @@ internal sealed class PrcFileStructureData
 
     /// <summary>Whether the section was needed and could not be read to its end: <see cref="ExactGeometry"/> is then null.</summary>
     public bool ExactGeometryFailed { get; init; }
+
+    /// <summary>
+    /// The summary of each topological context of the exact geometry, with the graphics of the faces of its bodies; null when the
+    /// exact geometry was not read, the file has no such section, or it could not be read (the faces then take their item's graphics).
+    /// </summary>
+    public PrcExtraGeometry[]? ExtraGeometry { get; init; }
 }
 
 /// <summary>When the exact-geometry section of a file structure is read.</summary>
@@ -67,7 +73,7 @@ internal sealed class PrcFile
 /// <summary>
 /// Reads the sections of a PRC file that lead to what is displayed: per file structure the globals
 /// (which start with the file's schemas), the tree and the tessellation, and when asked the exact geometry;
-/// then the model file. The extra-geometry sections are never inflated.
+/// then the model file. The extra-geometry section (the graphics of the faces of the exact geometry) is read with the exact geometry.
 /// </summary>
 internal static class PrcFileReader
 {
@@ -102,6 +108,7 @@ internal static class PrcFileReader
             container.Release(i, PrcSection.Tessellation);
 
             PrcFileStructureExactGeometry? exactGeometry = null;
+            PrcExtraGeometry[]? extraGeometry = null;
             bool exactGeometryFailed = false;
             if (geometry == PrcGeometryReading.Always || (geometry == PrcGeometryReading.WhenNeeded && PartsNeedExactGeometry(tree.Parts)))
             {
@@ -122,6 +129,11 @@ internal static class PrcFileReader
                 {
                     container.Release(i, PrcSection.ExactGeometry);
                 }
+
+                if (exactGeometry is not null && container.HasSection(i, PrcSection.ExtraGeometry))
+                {
+                    extraGeometry = ReadExtraGeometry(container, i, ctx, sections);
+                }
             }
 
             ref readonly PrcFileStructureInfo info = ref container[i];
@@ -134,6 +146,7 @@ internal static class PrcFileReader
                 Tessellation = tessellation,
                 ExactGeometry = exactGeometry,
                 ExactGeometryFailed = exactGeometryFailed,
+                ExtraGeometry = extraGeometry,
             };
         }
 
@@ -144,6 +157,30 @@ internal static class PrcFileReader
         End(ctx, sections, "ModelFile", -1, ref model);
 
         return new PrcFile { FileStructures = structures, ModelFile = modelFile, Sections = [.. sections] };
+    }
+
+    /// <summary>
+    /// The extra-geometry section of a file structure. It only adds the colours of faces: when it cannot be read (damaged, or of a
+    /// form this reader does not know) the model is drawn without them. Only a limit still stops the reading.
+    /// </summary>
+    private static PrcExtraGeometry[]? ReadExtraGeometry(PrcContainer container, int structure, PrcContext ctx, List<PrcSectionRead> sections)
+    {
+        try
+        {
+            var r = new PrcBitReader(container.Section(structure, PrcSection.ExtraGeometry), ctx.Limits.MaxStringLength);
+            Begin(ctx, "ExtraGeometry", ref r);
+            PrcExtraGeometry[] extra = PrcReaders.ReadAsmFileStructureExtraGeometry(ref r, ctx).ExtraGeom;
+            End(ctx, sections, "ExtraGeometry", structure, ref r);
+            return extra;
+        }
+        catch (Scene3DException e) when (e.Error != Scene3DError.LimitExceeded)
+        {
+            return null;
+        }
+        finally
+        {
+            container.Release(structure, PrcSection.ExtraGeometry);
+        }
     }
 
     /// <summary>

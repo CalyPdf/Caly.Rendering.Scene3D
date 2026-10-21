@@ -24,10 +24,14 @@ internal readonly record struct PrcBrepTessellation(int Faces, int FacesDropped,
 internal static class PrcBrepTessellator
 {
     /// <summary>
-    /// Adds the body's mesh (one part, material slot 0) to the scene being built: index -1 in the result when no face gave a triangle.
+    /// Adds the body's mesh to the scene being built: index -1 in the result when no face gave a triangle.
     /// <paramref name="scale"/> is the scale its topological context gives its bodies (the coordinates of the body times it are the file's).
+    /// <paramref name="faceGraphics"/>, when given, has the graphics of each face of the body (by its number in
+    /// <see cref="PrcTopoBrepDataCompress.Faces"/>): the faces with a style are the mesh's material slots after the first, in the order
+    /// of the faces, as for a tessellation (<see cref="PrcMesh.Slots"/>); the others, and every face without it, are in slot 0.
     /// </summary>
-    public static PrcMesh AddMesh(SceneBuilder builder, PrcTopoBrepDataCompress brep, int name, out PrcBrepTessellation result, double scale = 1, CancellationToken cancellation = default)
+    public static PrcMesh AddMesh(SceneBuilder builder, PrcTopoBrepDataCompress brep, int name, out PrcBrepTessellation result, double scale = 1,
+        CancellationToken cancellation = default, PrcFaceGraphics[]? faceGraphics = null)
     {
         var work = new Work(brep, builder.Limits.MaxIndices, cancellation);
         work.Run();
@@ -55,11 +59,12 @@ internal static class PrcBrepTessellator
         int[] corners = work.Corners;
         int[] none = new int[corners.Length];
         none.AsSpan().Fill(-1);
+        PrcFaceGraphics[] slots = Slots(faceGraphics, work.TriangleFaces, out int[] triangleSlot);
         return PrcMesher.Emit(
             builder,
             name,
             SceneMeshFlags.HasNormals,
-            [],
+            slots,
             points,
             work.Normals,
             default,
@@ -67,12 +72,54 @@ internal static class PrcBrepTessellator
             corners,
             none,
             none,
-            new int[triangles],
+            triangleSlot,
             triangles,
             missingNormals: false,
             creaseAngle: 0,
             anyColor: false,
             cancellation);
+    }
+
+    /// <summary>
+    /// The material slots of the faces' graphics: each graphics with a style once, in the order of the faces that have them, as slot 1
+    /// on; and the slot of each triangle (0 for a face without a style).
+    /// </summary>
+    internal static PrcFaceGraphics[] Slots(PrcFaceGraphics[]? faceGraphics, int[] triangleFaces, out int[] triangleSlot)
+    {
+        triangleSlot = new int[triangleFaces.Length];
+        if (faceGraphics is null)
+        {
+            return [];
+        }
+
+        var slots = new List<PrcFaceGraphics>();
+        var slotOf = new Dictionary<PrcFaceGraphics, int>();
+        var faceSlot = new int[faceGraphics.Length];
+        for (int f = 0; f < faceGraphics.Length; f++)
+        {
+            PrcFaceGraphics graphics = faceGraphics[f];
+            if (graphics.Style == 0)
+            {
+                continue;
+            }
+
+            if (!slotOf.TryGetValue(graphics, out int slot))
+            {
+                slots.Add(graphics);
+                slot = slots.Count;
+                slotOf.Add(graphics, slot);
+            }
+
+            faceSlot[f] = slot;
+        }
+
+        for (int t = 0; t < triangleFaces.Length; t++)
+        {
+            int face = triangleFaces[t];
+            triangleSlot[t] = (uint)face < (uint)faceSlot.Length ? faceSlot[face] : 0;
+        }
+
+        return [.. slots];
     }
 
     /// <summary>Drops every other line (the second, fourth, ...), by position: equal values are different lines.</summary>
@@ -125,6 +172,7 @@ internal static class PrcBrepTessellator
         private readonly List<double> _points = [];
         private readonly List<double> _normals = [];
         private readonly List<int> _corners = [];
+        private readonly List<int> _triangleFaces = [];
         private readonly ConstrainedTriangulator _triangulator = new();
         private int _faces, _dropped, _unsupported;
         private bool _capped;
@@ -143,6 +191,9 @@ internal static class PrcBrepTessellator
         public double[] Normals => [.. _normals];
 
         public int[] Corners => [.. _corners];
+
+        /// <summary>The face (its number in the body) each triangle was cut from.</summary>
+        public int[] TriangleFaces => [.. _triangleFaces];
 
         public PrcBrepTessellation Result => new(_faces, _dropped, _unsupported, _capped || _edges.Capped, _corners.Count / 3);
 
@@ -205,6 +256,11 @@ internal static class PrcBrepTessellator
             if ((long)_corners.Count > _maxIndices)
             {
                 throw new Scene3DException(Scene3DError.LimitExceeded, $"The scene has more than {_maxIndices} indices.");
+            }
+
+            for (int t = corners / 3; t < _corners.Count / 3; t++)
+            {
+                _triangleFaces.Add(f);
             }
 
             return status;

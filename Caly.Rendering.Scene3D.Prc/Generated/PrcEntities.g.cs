@@ -22,6 +22,63 @@ internal struct PrcContentPRCBase
     public required PrcName EntityName;
 }
 
+/// <summary>What is kept of <c>ElementGraphicsBehavior</c>.</summary>
+internal struct PrcElementGraphicsBehavior
+{
+    /// <summary><c>use_context</c>.</summary>
+    public required bool UseContext;
+
+    /// <summary><c>biased_layer_index</c>. Default when the file does not have it.</summary>
+    public required uint BiasedLayerIndex;
+
+    /// <summary><c>biased_index_of_line_style</c>. Default when the file does not have it.</summary>
+    public required uint BiasedIndexOfLineStyle;
+
+    /// <summary><c>behavior_bit_field</c>. Default when the file does not have it.</summary>
+    public required ushort BehaviorBitField;
+}
+
+/// <summary>What is kept of <c>ContextGraphics</c>.</summary>
+internal sealed class PrcContextGraphics
+{
+    /// <summary><c>treat_types</c>.</summary>
+    public required PrcGraphicsInformation[] TreatTypes;
+}
+
+/// <summary>What is kept of <c>GraphicsInformation</c>.</summary>
+internal sealed class PrcGraphicsInformation
+{
+    /// <summary><c>element_type</c>.</summary>
+    public required uint ElementType;
+
+    /// <summary><c>treat_types</c>.</summary>
+    public required PrcElementInformation[] TreatTypes;
+}
+
+/// <summary>What is kept of <c>ElementInformation</c>.</summary>
+internal struct PrcElementInformation
+{
+    /// <summary><c>has_graphics</c>.</summary>
+    public required bool HasGraphics;
+
+    /// <summary><c>graphic_behavior</c>. Default when the file does not have it.</summary>
+    public required PrcElementGraphicsBehavior GraphicBehavior;
+}
+
+/// <summary>What is kept of <c>ExtraGeometry</c>.</summary>
+internal sealed class PrcExtraGeometry
+{
+    /// <summary><c>context_data</c>.</summary>
+    public required PrcContextGraphics ContextData;
+}
+
+/// <summary>What is kept of <c>PRC_TYPE_ASM_FileStructureExtraGeometry</c>.</summary>
+internal sealed class PrcAsmFileStructureExtraGeometry
+{
+    /// <summary><c>extra_geom</c>.</summary>
+    public required PrcExtraGeometry[] ExtraGeom;
+}
+
 /// <summary>What is kept of <c>Entity_schema_definition</c>.</summary>
 internal sealed class PrcEntitySchemaDefinition
 {

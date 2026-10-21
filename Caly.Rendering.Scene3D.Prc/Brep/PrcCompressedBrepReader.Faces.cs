@@ -13,6 +13,8 @@ internal sealed partial class PrcCompressedBrepReader
     private readonly List<double> _surfaceData = [];
     private readonly List<int> _faceVertices = [];
     private readonly List<PrcGenericSurface> _genericSurfaces = [];
+    private readonly List<int> _facesInShellOrder = [];
+    private bool _shellOrderKnown = true;
     private int _shellCount;
 
     /// <summary>What the face being read has so far (it is put together in the order the file gives its parts).</summary>
@@ -45,17 +47,42 @@ internal sealed partial class PrcCompressedBrepReader
         _ctx.Enter("CompressedShell", r.BitPosition);
         uint announced = r.ReadBoolean() ? 1 : r.ReadNumberOfBitsThenUnsignedInteger();
         int count = _ctx.Count(ref r, announced, 6);        // a face is a type token and a bit at the least
+        int first = _faces.Count, iso = 0;
         for (int i = 0; i < count; i++)
         {
-            ReadFace(ref r);
+            if (_faces[ReadFace(ref r)].Kind <= PrcFaceKind.IsoNurbs)
+            {
+                iso++;
+            }
         }
 
-        // Which kind of face each place of the shell holds: the faces are in the same order as the shell's own only for the
-        // purpose of the BaseTopology that follows the body; nothing of the geometry depends on it.
-        r.Skip(count);
+        // Which kind of face each place of the shell holds, the iso faces having been stored first: this puts the faces back in
+        // the shell's own order, the one the graphics of the faces follow (the extra geometry's context graphics). Nothing of the
+        // geometry depends on it. Flags that do not agree with the faces leave the order unknown.
+        int nextIso = first, nextAna = first + iso;
+        for (int i = 0; i < count; i++)
+        {
+            _facesInShellOrder.Add(r.ReadBoolean() ? nextIso++ : nextAna++);
+        }
+
+        _shellOrderKnown &= nextIso == first + iso && nextAna == first + count && IsoFirst(first, iso, count);
         _shellCount++;
         _ctx.Leave();
         return count;
+    }
+
+    /// <summary>Whether the faces of a shell are stored with its iso faces first, as the order of the shell is restored assuming.</summary>
+    private bool IsoFirst(int first, int iso, int count)
+    {
+        for (int i = first; i < first + count; i++)
+        {
+            if (_faces[i].Kind <= PrcFaceKind.IsoNurbs != i < first + iso)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The shells of several connex entities (<c>MultipleCompressedConnex</c>). Returns the number of faces.</summary>

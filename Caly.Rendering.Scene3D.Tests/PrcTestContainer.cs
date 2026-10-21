@@ -22,6 +22,9 @@ internal sealed class PrcTestContainer
         /// <summary>The exact-geometry section (what an item without a tessellation is drawn from).</summary>
         public byte[] Geometry { get; init; } = [0];
 
+        /// <summary>The extra-geometry section (the graphics of the faces of the exact geometry); by default a byte that is not one.</summary>
+        public byte[] ExtraGeometry { get; init; } = [0];
+
         public List<byte[]> Files { get; } = [];
     }
 
@@ -81,7 +84,7 @@ internal sealed class PrcTestContainer
 
             body.Write(header.ToArray());
 
-            byte[][] sections = [Pack(i, "globals", s.Globals), Pack(i, "tree", s.Tree), Pack(i, "tessellation", s.Tessellation), Pack(i, "geometry", s.Geometry), Zlib([0])];
+            byte[][] sections = [Pack(i, "globals", s.Globals), Pack(i, "tree", s.Tree), Pack(i, "tessellation", s.Tessellation), Pack(i, "geometry", s.Geometry), Pack(i, "extra geometry", s.ExtraGeometry)];
             for (int k = 0; k < sections.Length; k++)
             {
                 starts[k + 1] = (uint)(position + body.Length);

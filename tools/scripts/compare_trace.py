@@ -1,7 +1,7 @@
 # Compares how Scene3D.Prc and prc-rs walk PRC payloads: every entity, in order, with the bit it starts
 # at, and where each section ends. Both tools are run and their outputs compared as they are produced.
 #
-#   python compare_trace.py <payload.prc>...            one line per payload, first difference shown (globals, tree, tessellation,\n#                                                       exact geometry and model file are compared)
+#   python compare_trace.py <payload.prc>...            one line per payload, first difference shown (globals, tree, tessellation,\n#                                                       exact geometry, extra geometry and model file are compared)
 #   python compare_trace.py --all                       every payload of SCENE3D_PRC_CORPUS; writes oracle.md
 #   python compare_trace.py --keep <payload.prc>        also keeps both normalised traces in the current folder
 #
@@ -32,7 +32,7 @@ END = re.compile(r'--"?([A-Za-z]+)"? ENDOK remaining: (\d+) bits.*?consumed: (\d
 
 def reference_lines(path):
     env = dict(os.environ, RUST_LOG='trace')
-    p = subprocess.Popen([REFERENCE, '--gl', '--tr', '--te', '--ge', '--mf', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    p = subprocess.Popen([REFERENCE, '--gl', '--tr', '--te', '--ge', '--ex', '--mf', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          env=env, text=True, encoding='utf-8', errors='replace', bufsize=1 << 20)
     for line in p.stdout:
         m = ENTITY.match(line)

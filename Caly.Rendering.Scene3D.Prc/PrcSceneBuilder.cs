@@ -666,7 +666,11 @@ internal sealed class PrcSceneBuilder
             // unusable 0 on 11: the sample whose parts are 0.19 across and are placed a hundred apart).
             PrcTopoContext context = contexts[contextIndex];
             double scale = context.HasScale && double.IsFinite(context.Scale) && context.Scale > 0 ? context.Scale : 1;
-            mesh = PrcBrepTessellator.AddMesh(_builder, brep, node.Name, out PrcBrepTessellation result, scale, _cancellation);
+            // The colours of single faces are in the extra geometry; a body converted from an uncompressed one has none read.
+            PrcFaceGraphics[]? faceGraphics = body.Id is PrcTopoBrepDataCompress
+                ? PrcFaceStyles.Of(data.ExtraGeometry, contexts, (int)contextIndex, (int)bodyIndex)
+                : null;
+            mesh = PrcBrepTessellator.AddMesh(_builder, brep, node.Name, out PrcBrepTessellation result, scale, _cancellation, faceGraphics);
             _brepFaces += result.Faces;
             _brepDropped += result.FacesDropped;
             _brepUnsupported += result.FacesUnsupported;
@@ -681,9 +685,17 @@ internal sealed class PrcSceneBuilder
             return;
         }
 
+        // Slot 0 is for the faces without a style of their own; a face's style is applied over the item's as a tessellation's is.
         node.Mesh = mesh.Mesh;
-        node.BindingCount = 1;
+        node.BindingCount = mesh.Slots.Length + 1;
         node.FirstBinding = _builder.AddBinding(Material(appearance, mesh.HasColors));
+        foreach (PrcFaceGraphics slot in mesh.Slots)
+        {
+            Appearance ofFace = appearance;
+            Apply(ref ofFace, structure, slot.Style, (int)slot.Behavior, show: false);
+            _builder.AddBinding(Material(ofFace, mesh.HasColors));
+        }
+
         _builder.AddNode(node);
     }
 

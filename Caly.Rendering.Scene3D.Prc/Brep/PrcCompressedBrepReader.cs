@@ -79,7 +79,7 @@ internal sealed partial class PrcCompressedBrepReader
     public PrcTopoBrepDataCompress Result()
     {
         _ctx.Charge((long)_vertices.Count * 24 + (long)_curves.Count * 24 + (long)_curveData.Count * 8 + (long)_compositeMembers.Count * 4
-            + (long)_coedges.Count * 8 + (long)_loops.Count * 12 + (long)_faces.Count * 80 + (long)_surfaceData.Count * 8 + (long)_faceVertices.Count * 4
+            + (long)_coedges.Count * 8 + (long)_loops.Count * 12 + (long)_faces.Count * 84 + (long)_surfaceData.Count * 8 + (long)_faceVertices.Count * 4
             + (long)_genericSurfaces.Count * 120);
         return new PrcTopoBrepDataCompress
         {
@@ -91,6 +91,7 @@ internal sealed partial class PrcCompressedBrepReader
             Coedges = [.. _coedges],
             Loops = [.. _loops],
             Faces = [.. _faces],
+            FacesInShellOrder = _shellOrderKnown && _facesInShellOrder.Count == _faces.Count ? [.. _facesInShellOrder] : null,
             SurfaceData = [.. _surfaceData],
             FaceVertices = [.. _faceVertices],
             GenericSurfaces = [.. _genericSurfaces],

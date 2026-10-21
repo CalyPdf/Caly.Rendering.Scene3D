@@ -45,6 +45,25 @@ internal sealed class PrcTestFile
     /// <summary>The scale every topological context gives its bodies (the context's <c>has_scale</c> and <c>scale</c>); none by default.</summary>
     public double? ContextScale { get; init; }
 
+    /// <summary>
+    /// The graphics of the faces of each topological context, written as the extra-geometry section (ISO 14739-1, 8.3.9), one entry
+    /// per face of the context in the order of its bodies and shells; null (the default) for no such section.
+    /// </summary>
+    public List<FaceGraphics[]>? ContextFaceGraphics { get; init; }
+
+    /// <summary>
+    /// One entry of a context's face graphics: none (<see cref="None"/>), a style (biased: its index plus one) with behaviour bits,
+    /// or the current graphics (<see cref="Current"/>).
+    /// </summary>
+    public readonly record struct FaceGraphics(bool HasGraphics, bool UseContext, uint BiasedStyle, ushort Behavior = 1)
+    {
+        public static FaceGraphics None => new(false, false, 0);
+
+        public static FaceGraphics Current => new(true, true, 0);
+
+        public static FaceGraphics Style(uint biasedStyle, ushort behavior = 1) => new(true, false, biasedStyle, behavior);
+    }
+
     /// <summary>Text written as the user data of the tree's entities: 0 bits by default.</summary>
     public uint UserDataBits { get; init; }
 
@@ -140,7 +159,11 @@ internal sealed class PrcTestFile
     public byte[] Build()
     {
         var container = new PrcTestContainer { AuthoringVersion = AuthoringVersion, ModelFile = ModelFile() };
-        container.Structures.Add(new PrcTestContainer.Structure { Globals = Globals(), Tree = Tree(), Tessellation = TessellationSection(), Geometry = GeometrySection() });
+        container.Structures.Add(new PrcTestContainer.Structure
+        {
+            Globals = Globals(), Tree = Tree(), Tessellation = TessellationSection(), Geometry = GeometrySection(),
+            ExtraGeometry = ContextFaceGraphics is null ? [0] : ExtraGeometrySection(),
+        });
         return container.Build();
     }
 
@@ -166,6 +189,42 @@ internal sealed class PrcTestFile
             foreach (PrcBitWriter body in bodies)
             {
                 w.Append(body);
+            }
+        }
+
+        return w.Unsigned(0).ToArray();                                                                          // user data
+    }
+
+    /// <summary>
+    /// The extra-geometry section: per topological context the summary of its bodies (each a compressed body with its tolerance), then
+    /// the graphics of its faces.
+    /// </summary>
+    public byte[] ExtraGeometrySection()
+    {
+        var w = new PrcBitWriter();
+        List<FaceGraphics[]> contexts = ContextFaceGraphics ?? [];
+        Base(w.Unsigned(PrcType.PRC_TYPE_ASM_FileStructureExtraGeometry), "extra geometry").Unsigned((uint)contexts.Count);
+        for (int c = 0; c < contexts.Count; c++)
+        {
+            int bodies = c < TopologicalContexts.Count ? TopologicalContexts[c].Count : 0;
+            w.Unsigned((uint)bodies);
+            for (int b = 0; b < bodies; b++)
+            {
+                w.Unsigned(PrcType.PRC_TYPE_TOPO_BrepDataCompress).Double(0.01);
+            }
+
+            w.Unsigned(1).Unsigned(PrcType.PRC_TYPE_TOPO_Face).Unsigned((uint)contexts[c].Length);   // one kind of element: faces
+            foreach (FaceGraphics face in contexts[c])
+            {
+                w.Bit(face.HasGraphics);
+                if (face.HasGraphics)
+                {
+                    w.Bit(face.UseContext);
+                    if (!face.UseContext)
+                    {
+                        w.Unsigned(0).Unsigned(face.BiasedStyle).Short(face.Behavior);                    // no layer
+                    }
+                }
             }
         }
 

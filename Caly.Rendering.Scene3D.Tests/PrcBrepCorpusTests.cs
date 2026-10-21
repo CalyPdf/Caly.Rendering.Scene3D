@@ -104,6 +104,38 @@ public class PrcBrepCorpusTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// The LandingGear's colours (pink bushings, light blue arms, green lugs, yellow block on a lavender body, as the page's own
+    /// picture shows them) are given to single faces, in the extra-geometry section: its one compressed body was drawn all lavender
+    /// before that section was read.
+    /// </summary>
+    [Fact]
+    public void TheLandingGearHasTheColoursOfItsFaces()
+    {
+        string? path = PrcContainerTests.CorpusFiles().FirstOrDefault(f => f.Contains("LandingGear-V03042024_136", StringComparison.Ordinal));
+        if (path is null)
+        {
+            return;
+        }
+
+        using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
+
+        SceneNode node = scene.Nodes.ToArray().Single(n => n.Mesh >= 0);
+        var colours = new HashSet<(int, int, int)>();
+        for (int b = 0; b < node.BindingCount; b++)
+        {
+            System.Numerics.Vector3 d = scene.Materials[scene.Bindings[node.FirstBinding + b]].Diffuse;
+            colours.Add(((int)Math.Round(d.X * 255), (int)Math.Round(d.Y * 255), (int)Math.Round(d.Z * 255)));
+        }
+
+        output.WriteLine($"{node.BindingCount} material slots, {scene.Meshes[node.Mesh].PartCount} parts");
+        Assert.Contains((210, 210, 255), colours);                  // the body: lavender
+        Assert.Contains((255, 128, 128), colours);                  // the bushings: pink
+        Assert.Contains((0, 128, 255), colours);                    // the arms: light blue
+        Assert.Contains((0, 255, 0), colours);                      // the lugs: green
+        Assert.Contains((255, 255, 0), colours);                    // the block: yellow
+    }
+
+    /// <summary>
     /// A spline surface that closes in u has its last row of control points on its first. The first column is stored as steps and
     /// closes by itself; the rest are corrections to a prediction, and close only if they are read right: types 1 and 2 in the local
     /// frame of the two steps before, type 3 in plain coordinates. Read so, every closed net of the corpus closes to within two

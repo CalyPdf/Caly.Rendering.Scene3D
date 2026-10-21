@@ -56,7 +56,7 @@ scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped
 |---|:---:|:---:|
 | Scene tree with names and placements | ✅ | ✅ |
 | Triangle meshes | ✅ full detail, progressive meshes included | ✅ plain and compressed |
-| Exact geometry (B-rep) triangulated | — | ✅ planes, cylinders, cones, spheres, tori, NURBS |
+| Exact geometry (B-rep) triangulated | — | ✅ planes, cylinders, cones, spheres, tori, NURBS; colours of single faces of compressed bodies |
 | Lines and points | ✅ line sets, point sets | ❌ wires and points |
 | Materials, colours, transparency | ✅ | ✅ with PRC's style inheritance |
 | Vertex colours | ✅ diffuse | ✅ |
@@ -88,6 +88,7 @@ scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped
 - Markup text, symbol and picture entities, leaders, and markups of parts and of PRC views
 - The views and cameras stored in the PRC file itself
 - Pictures stored as raw pixels; line styles and patterns
+- Colours of single faces of uncompressed B-rep bodies (those of compressed bodies are read)
 - Projected and surface-mapped textures, blend and decal texture functions
 
 A PRC part whose compressed mesh cannot be decoded is left out, and `PrcReader.IsComplete(scene)` says so.

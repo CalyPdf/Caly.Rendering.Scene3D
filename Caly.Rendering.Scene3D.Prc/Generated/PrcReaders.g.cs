@@ -124,6 +124,174 @@ internal static partial class PrcReaders
         };
     }
 
+    // ElementGraphicsBehavior
+    internal static PrcElementGraphicsBehavior ReadElementGraphicsBehavior(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("ElementGraphicsBehavior", r.BitPosition);
+        bool use_context = r.ReadBoolean();
+        uint biased_layer_index = 0;
+        if (!use_context)
+        {
+            biased_layer_index = r.ReadUnsignedInteger();
+        }
+        uint biased_index_of_line_style = 0;
+        if (!use_context)
+        {
+            biased_index_of_line_style = r.ReadUnsignedInteger();
+        }
+        ushort behavior_bit_field = 0;
+        if (!use_context)
+        {
+            behavior_bit_field = r.ReadUnsignedShort();
+        }
+        ctx.Leave();
+        return new PrcElementGraphicsBehavior
+        {
+            UseContext = use_context,
+            BiasedLayerIndex = biased_layer_index,
+            BiasedIndexOfLineStyle = biased_index_of_line_style,
+            BehaviorBitField = behavior_bit_field,
+        };
+    }
+
+    // GeometrySummary
+    internal static void ReadGeometrySummary(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("GeometrySummary", r.BitPosition);
+        uint number_of_bodies = r.ReadUnsignedInteger();
+        for (int i = 0, n = ctx.Count(ref r, (long)number_of_bodies, 1); i < n; i++)
+        {
+            ReadBodyInformation(ref r, ctx);
+        }
+        ctx.Leave();
+    }
+
+    // BodyInformation
+    internal static void ReadBodyInformation(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("BodyInformation", r.BitPosition);
+        uint body_serial_type = r.ReadUnsignedInteger();
+        if (body_serial_type == 156 || body_serial_type == 155 || body_serial_type == 173)
+        {
+            r.ReadDouble();
+        }
+        ctx.Leave();
+    }
+
+    // ContextGraphics
+    internal static PrcContextGraphics ReadContextGraphics(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("ContextGraphics", r.BitPosition);
+        uint number_of_treat_type = r.ReadUnsignedInteger();
+        PrcGraphicsInformation[] treat_types = [];
+        int treat_types__count = ctx.Count(ref r, (long)number_of_treat_type, 2);
+        ctx.Charge(treat_types__count * 48L);
+        treat_types = new PrcGraphicsInformation[Math.Min(treat_types__count, 256)];
+        for (int i = 0; i < treat_types__count; i++)
+        {
+            if (i == treat_types.Length)
+            {
+                Array.Resize(ref treat_types, (int)Math.Min(treat_types.Length * 2L, treat_types__count));
+            }
+
+            treat_types[i] = ReadGraphicsInformation(ref r, ctx);
+        }
+        ctx.Leave();
+        return new PrcContextGraphics
+        {
+            TreatTypes = treat_types,
+        };
+    }
+
+    // GraphicsInformation
+    internal static PrcGraphicsInformation ReadGraphicsInformation(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("GraphicsInformation", r.BitPosition);
+        uint element_type = r.ReadUnsignedInteger();
+        uint number_of_element = r.ReadUnsignedInteger();
+        PrcElementInformation[] treat_types = [];
+        int treat_types__count = ctx.Count(ref r, (long)number_of_element, 1);
+        ctx.Charge(treat_types__count * 16L);
+        treat_types = new PrcElementInformation[Math.Min(treat_types__count, 256)];
+        for (int i = 0; i < treat_types__count; i++)
+        {
+            if (i == treat_types.Length)
+            {
+                Array.Resize(ref treat_types, (int)Math.Min(treat_types.Length * 2L, treat_types__count));
+            }
+
+            treat_types[i] = ReadElementInformation(ref r, ctx);
+        }
+        ctx.Leave();
+        return new PrcGraphicsInformation
+        {
+            ElementType = element_type,
+            TreatTypes = treat_types,
+        };
+    }
+
+    // ElementInformation
+    internal static PrcElementInformation ReadElementInformation(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("ElementInformation", r.BitPosition);
+        bool has_graphics = r.ReadBoolean();
+        PrcElementGraphicsBehavior graphic_behavior = default;
+        if (has_graphics)
+        {
+            graphic_behavior = ReadElementGraphicsBehavior(ref r, ctx);
+        }
+        ctx.Leave();
+        return new PrcElementInformation
+        {
+            HasGraphics = has_graphics,
+            GraphicBehavior = graphic_behavior,
+        };
+    }
+
+    // ExtraGeometry
+    internal static PrcExtraGeometry ReadExtraGeometry(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("ExtraGeometry", r.BitPosition);
+        ReadGeometrySummary(ref r, ctx);
+        PrcContextGraphics context_data = ReadContextGraphics(ref r, ctx);
+        ctx.Leave();
+        return new PrcExtraGeometry
+        {
+            ContextData = context_data,
+        };
+    }
+
+    // PRC_TYPE_ASM_FileStructureExtraGeometry
+    internal static PrcAsmFileStructureExtraGeometry ReadAsmFileStructureExtraGeometry(ref PrcBitReader r, PrcContext ctx)
+    {
+        ctx.Enter("PRC_TYPE_ASM_FileStructureExtraGeometry", r.BitPosition);
+        uint id = r.ReadUnsignedInteger();
+        ctx.Expect(id, PrcType.PRC_TYPE_ASM_FileStructureExtraGeometry, "PRC_TYPE_ASM_FileStructureExtraGeometry");
+        ReadContentPRCBase(ref r, ctx);
+        uint extra_geom_count = r.ReadUnsignedInteger();
+        PrcExtraGeometry[] extra_geom = [];
+        int extra_geom__count = ctx.Count(ref r, (long)extra_geom_count, 2);
+        ctx.Charge(extra_geom__count * 40L);
+        extra_geom = new PrcExtraGeometry[Math.Min(extra_geom__count, 256)];
+        for (int i = 0; i < extra_geom__count; i++)
+        {
+            if (i == extra_geom.Length)
+            {
+                Array.Resize(ref extra_geom, (int)Math.Min(extra_geom.Length * 2L, extra_geom__count));
+            }
+
+            extra_geom[i] = ReadExtraGeometry(ref r, ctx);
+        }
+        ctx.Schema.Evaluate(ref r, PrcType.PRC_TYPE_ASM_FileStructureExtraGeometry);
+        ctx.Mark("UserData", r.BitPosition);
+        r.SkipUserData();
+        ctx.Leave();
+        return new PrcAsmFileStructureExtraGeometry
+        {
+            ExtraGeom = extra_geom,
+        };
+    }
+
     // Entity_schema_definition
     internal static PrcEntitySchemaDefinition ReadEntitySchemaDefinition(ref PrcBitReader r, PrcContext ctx)
     {
