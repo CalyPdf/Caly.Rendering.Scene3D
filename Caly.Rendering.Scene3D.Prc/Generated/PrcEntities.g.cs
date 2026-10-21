@@ -112,6 +112,39 @@ internal struct PrcUniqueId
     public required uint UniqueId3;
 }
 
+/// <summary>What is kept of <c>FontKey</c>.</summary>
+internal sealed class PrcFontKey
+{
+    /// <summary><c>font_size</c>.</summary>
+    public required uint FontSize;
+
+    /// <summary><c>font_attributes</c>.</summary>
+    public required sbyte FontAttributes;
+}
+
+/// <summary>What is kept of <c>FontKeysSameFont</c>.</summary>
+internal sealed class PrcFontKeysSameFont
+{
+    /// <summary><c>font_name</c>.</summary>
+    public required string FontName;
+
+    /// <summary><c>character_set</c>.</summary>
+    public required uint CharacterSet;
+
+    /// <summary><c>font_key_list</c>.</summary>
+    public required PrcFontKey[] FontKeyList;
+}
+
+/// <summary>What is kept of <c>MarkupSerializationHelper</c>.</summary>
+internal sealed class PrcMarkupSerializationHelper
+{
+    /// <summary><c>default_font_family_name</c>.</summary>
+    public required string DefaultFontFamilyName;
+
+    /// <summary><c>font_keys_of_font</c>.</summary>
+    public required PrcFontKeysSameFont[] FontKeysOfFont;
+}
+
 /// <summary>What is kept of <c>RgbColor</c>.</summary>
 internal struct PrcRgbColor
 {
@@ -383,6 +416,9 @@ internal sealed class PrcTessMarkup
 
     /// <summary><c>code_numbers</c>.</summary>
     public required uint[] CodeNumbers;
+
+    /// <summary><c>text_strings</c>.</summary>
+    public required string[] TextStrings;
 }
 
 /// <summary>What is kept of <c>GraphicsContent</c>.</summary>
@@ -434,6 +470,9 @@ internal sealed class PrcRiCoordinateSystem
 /// <summary>What is kept of <c>FileStructureInternalGlobalData</c>.</summary>
 internal sealed class PrcFileStructureInternalGlobalData
 {
+    /// <summary><c>serialize_help</c>.</summary>
+    public required PrcMarkupSerializationHelper SerializeHelp;
+
     /// <summary><c>colors</c>.</summary>
     public required PrcRgbColor[] Colors;
 
@@ -667,6 +706,9 @@ internal sealed class PrcAsmPartDefinition
 
     /// <summary><c>representation_items</c>.</summary>
     public required PrcRiRepresentationItem[] RepresentationItems;
+
+    /// <summary><c>markups</c>.</summary>
+    public required PrcMarkupData Markups;
 }
 
 /// <summary>What is kept of <c>FileIdentifier</c>.</summary>

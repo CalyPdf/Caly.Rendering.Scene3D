@@ -62,9 +62,9 @@ public class PrcSceneBuilderTests
         DataType = PrcType.PRC_TYPE_RI_Set,
     };
 
-    private static PrcAsmPartDefinition Part(string name, params PrcRiRepresentationItem[] items) => new() { Base = Base(name), RepresentationItems = items };
+    private static PrcAsmPartDefinition Part(string name, params PrcRiRepresentationItem[] items) => new() { Base = Base(name), RepresentationItems = items, Markups = new PrcMarkupData { Markups = [] } };
 
-    private static PrcAsmPartDefinition StyledPart(string name, uint style, ushort behavior, params PrcRiRepresentationItem[] items) => new() { Base = Base(name, style, behavior), RepresentationItems = items };
+    private static PrcAsmPartDefinition StyledPart(string name, uint style, ushort behavior, params PrcRiRepresentationItem[] items) => new() { Base = Base(name, style, behavior), RepresentationItems = items, Markups = new PrcMarkupData { Markups = [] } };
 
     /// <summary>A tessellation of one triangle per face; each face may name a style and a behaviour.</summary>
     private static PrcTess Mesh(params (uint Style, ushort Behavior)[] faces)
@@ -157,6 +157,7 @@ public class PrcSceneBuilderTests
         Files = files ?? [],
         Globals = new PrcFileStructureInternalGlobalData
         {
+            SerializeHelp = new PrcMarkupSerializationHelper { DefaultFontFamilyName = "", FontKeysOfFont = [] },
             Colors = Palette,
             Pictures = pictures ?? [],
             Textures = textures ?? [],

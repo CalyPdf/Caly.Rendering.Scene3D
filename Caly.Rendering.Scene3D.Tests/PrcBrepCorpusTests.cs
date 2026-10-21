@@ -119,7 +119,8 @@ public class PrcBrepCorpusTests(ITestOutputHelper output)
 
         using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
 
-        SceneNode node = scene.Nodes.ToArray().Single(n => n.Mesh >= 0);
+        // The body: its notes and dimensions are hidden nodes of their own.
+        SceneNode node = scene.Nodes.ToArray().Single(n => n.Mesh >= 0 && n.Visible);
         var colours = new HashSet<(int, int, int)>();
         for (int b = 0; b < node.BindingCount; b++)
         {
@@ -167,6 +168,37 @@ public class PrcBrepCorpusTests(ITestOutputHelper output)
         Assert.Contains((255, 83, 83), colours);                    // red
         Assert.Contains((106, 106, 106), colours);                  // dark grey
         Assert.DoesNotContain((243, 254, 177), colours);            // the cover's own pale green, which the assembly replaces
+    }
+
+    /// <summary>
+    /// The LandingGear's notes and dimensions are markups of its part, their text strings in a font with the box each fills (the
+    /// page's own picture shows the "PROJECT INFORMATION" block beside the shaft). Drawn, the heading's strokes fill its box: from
+    /// the origin of its matrix (0, -673.59, 594.84), 128.19 wide times 2.566 along y, its capitals 7.078 high times 2.8256 along z,
+    /// in the plane x = 0.
+    /// </summary>
+    [Fact]
+    public void TheLandingGearHasTheTextOfItsNotes()
+    {
+        string? path = PrcContainerTests.CorpusFiles().FirstOrDefault(f => f.Contains("LandingGear-V03042024_136", StringComparison.Ordinal));
+        if (path is null)
+        {
+            return;
+        }
+
+        using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
+        int node = Enumerable.Range(0, scene.Nodes.Length).Single(i => scene.GetName(scene.Nodes[i].Name).StartsWith("Text.10.", StringComparison.Ordinal));
+        SceneMesh mesh = scene.Meshes[scene.Nodes[node].Mesh];
+        Assert.Equal(SceneTopology.Lines, mesh.Topology);
+        Assert.False(scene.Nodes[node].Visible);
+
+        SceneBounds bounds = mesh.Bounds;
+        Assert.Equal(0, bounds.Min.X, 3);
+        Assert.Equal(0, bounds.Max.X, 3);
+        Assert.Equal(-673.59f, bounds.Min.Y, 0.05f);
+        Assert.InRange(bounds.Max.Y, -673.59f + (128.19f * 2.566f * 0.95f), -673.59f + (128.19f * 2.566f));
+        Assert.Equal(594.84f, bounds.Min.Z, 0.05f);
+        Assert.Equal(594.84f + (7.0781f * 2.8256f), bounds.Max.Z, 0.05f);
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-markup-entity-not-shown");
     }
 
     /// <summary>

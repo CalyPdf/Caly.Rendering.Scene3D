@@ -329,6 +329,10 @@ internal sealed class PrcSceneBuilder
                 Appearance ofPart = appearance;
                 Apply(ref ofPart, owner.Structure, g.BiasedIndexOfLineStyle, g.BehaviorBitField, show: true);
                 AddItems(part.RepresentationItems, owner.Structure, node, ofPart, depth + 1, reference);
+
+                // A part's own notes and dimensions show wherever it is used, named with the occurrence as its items are (the
+                // Tetra4D LandingGear's are all its part's).
+                AddMarkups(part.Markups.Markups, owner.Structure, node, reference);
             }
         }
 
