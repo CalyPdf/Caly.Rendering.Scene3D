@@ -22,19 +22,20 @@ internal static class PrcCompressedMesher
     /// <summary>
     /// The graphics of the triangles that have a style, each once, in the order they are met: entry
     /// <c>i</c> is material slot <c>i + 1</c> of the mesh (slot 0 is for triangles without a style).
+    /// <paramref name="faceOverrides"/>, when not empty, has per face what an occurrence says of it (see <see cref="PrcFaceGraphics.Override"/>).
     /// </summary>
-    public static PrcFaceGraphics[] Slots(PrcTess3DCompressed tess)
+    public static PrcFaceGraphics[] Slots(PrcTess3DCompressed tess, ReadOnlySpan<int> faceOverrides = default)
     {
         int triangleCount = tess.TriangleCount;
         PrcFaceGraphics[] ofTriangles = ArrayPool<PrcFaceGraphics>.Shared.Rent(Math.Max(triangleCount, 1));
         try
         {
-            TriangleGraphics(tess, ofTriangles);
+            TriangleGraphics(tess, ofTriangles, faceOverrides);
             var seen = new HashSet<PrcFaceGraphics>();
             var slots = new List<PrcFaceGraphics>();
             for (int t = 0; t < triangleCount; t++)
             {
-                if (ofTriangles[t].Style != 0 && seen.Add(ofTriangles[t]))
+                if (ofTriangles[t].HasSlot && seen.Add(ofTriangles[t]))
                 {
                     slots.Add(ofTriangles[t]);
                 }
@@ -49,7 +50,7 @@ internal static class PrcCompressedMesher
     }
 
     /// <summary>The graphics of every triangle, in the order of the triangles.</summary>
-    private static void TriangleGraphics(PrcTess3DCompressed tess, Span<PrcFaceGraphics> ofTriangles)
+    private static void TriangleGraphics(PrcTess3DCompressed tess, Span<PrcFaceGraphics> ofTriangles, ReadOnlySpan<int> faceOverrides)
     {
         int[] faces = tess.TriangleFaces;
         ushort[] styles = tess.LineAttributes;
@@ -89,7 +90,7 @@ internal static class PrcCompressedMesher
                 }
 
                 // A tessellation without behaviours has nothing special to say of its faces: they are shown.
-                ofTriangles[t] = new PrcFaceGraphics((uint)style, face < behaviors.Length ? behaviors[face] : ShownByDefault);
+                ofTriangles[t] = new PrcFaceGraphics((uint)style, face < behaviors.Length ? behaviors[face] : ShownByDefault, PrcMesher.OverrideOf(faceOverrides, face));
             }
         }
         finally
@@ -112,7 +113,9 @@ internal static class PrcCompressedMesher
     /// Per material slot of <see cref="Slots"/> (entry <c>i</c> for slot <c>i + 1</c>), whether its
     /// triangles are left out of the mesh; empty for none.
     /// </param>
-    public static bool TryAddMesh(SceneBuilder builder, PrcTess3DCompressed tess, int name, out PrcMesh mesh, out string? reason, CancellationToken cancellation = default, ReadOnlySpan<bool> hiddenSlots = default)
+    /// <param name="faceOverrides">Per face, what an occurrence says of it (see <see cref="PrcFaceGraphics.Override"/>); empty for nothing.</param>
+    public static bool TryAddMesh(SceneBuilder builder, PrcTess3DCompressed tess, int name, out PrcMesh mesh, out string? reason, CancellationToken cancellation = default,
+        ReadOnlySpan<bool> hiddenSlots = default, ReadOnlySpan<int> faceOverrides = default)
     {
         CheckLimits(builder.Limits, tess);
 
@@ -131,7 +134,7 @@ internal static class PrcCompressedMesher
         using (geometry)
         {
             reason = null;
-            mesh = AddMesh(builder, tess, geometry, name, cancellation, hiddenSlots);
+            mesh = AddMesh(builder, tess, geometry, name, cancellation, hiddenSlots, faceOverrides);
             return true;
         }
     }
@@ -166,7 +169,8 @@ internal static class PrcCompressedMesher
         }
     }
 
-    private static PrcMesh AddMesh(SceneBuilder builder, PrcTess3DCompressed tess, PrcCompressedGeometry geometry, int name, CancellationToken cancellation, ReadOnlySpan<bool> hiddenSlots)
+    private static PrcMesh AddMesh(SceneBuilder builder, PrcTess3DCompressed tess, PrcCompressedGeometry geometry, int name, CancellationToken cancellation, ReadOnlySpan<bool> hiddenSlots,
+        ReadOnlySpan<int> faceOverrides)
     {
         int all = geometry.TriangleCount;
         if ((long)all * 3 > builder.Limits.MaxIndices)
@@ -174,7 +178,7 @@ internal static class PrcCompressedMesher
             throw new Scene3DException(Scene3DError.LimitExceeded, $"The scene has more than {builder.Limits.MaxIndices} indices.");
         }
 
-        PrcFaceGraphics[] slotStyles = Slots(tess);
+        PrcFaceGraphics[] slotStyles = Slots(tess, faceOverrides);
         var slotOfStyle = new Dictionary<PrcFaceGraphics, int>(slotStyles.Length);
         for (int i = 0; i < slotStyles.Length; i++)
         {
@@ -192,13 +196,13 @@ internal static class PrcCompressedMesher
         int[] triangleSlot = ArrayPool<int>.Shared.Rent(Math.Max(all, 1));
         try
         {
-            TriangleGraphics(tess, ofTriangles);
+            TriangleGraphics(tess, ofTriangles, faceOverrides);
 
             // The triangles that are shown, with their slots.
             int triangleCount = 0;
             for (int t = 0; t < all; t++)
             {
-                int slot = ofTriangles[t].Style != 0 && slotOfStyle.TryGetValue(ofTriangles[t], out int found) ? found : 0;
+                int slot = ofTriangles[t].HasSlot && slotOfStyle.TryGetValue(ofTriangles[t], out int found) ? found : 0;
                 if (slot > 0 && slot <= hiddenSlots.Length && hiddenSlots[slot - 1])
                 {
                     continue;

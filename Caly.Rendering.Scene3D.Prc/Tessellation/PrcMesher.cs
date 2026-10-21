@@ -18,7 +18,15 @@ internal readonly record struct PrcMesh(int Mesh, PrcFaceGraphics[] Slots, int T
 /// <summary>The graphics a face gives its triangles.</summary>
 /// <param name="Style">The line style: its index in the file structure's styles, plus one.</param>
 /// <param name="Behavior">The behaviour bits (as in the graphics of an entity), which say whether the style yields to the owner's and whether the face is shown.</param>
-internal readonly record struct PrcFaceGraphics(uint Style, uint Behavior);
+/// <param name="Override">
+/// What an occurrence says of the face, as a number its caller gives (from 1; 0 for nothing): faces that differ only in it are in
+/// slots of their own, which the caller then gives the occurrence's appearance.
+/// </param>
+internal readonly record struct PrcFaceGraphics(uint Style, uint Behavior, int Override = 0)
+{
+    /// <summary>Whether the face needs a slot of its own: it names a style, or an occurrence says something of it.</summary>
+    public bool HasSlot => Style != 0 || Override != 0;
+}
 
 /// <summary>
 /// Turns a plain tessellation (<c>PRC_TYPE_TESS_3D</c>) into a mesh: the triangles of every primitive of
@@ -39,20 +47,24 @@ internal static class PrcMesher
     /// <summary>
     /// The graphics of the faces that have a style, each once, in the order of the faces: entry
     /// <c>i</c> is material slot <c>i + 1</c> of the mesh (slot 0 is for faces without a style).
+    /// <paramref name="faceOverrides"/>, when not empty, has per face what an occurrence says of it (see <see cref="PrcFaceGraphics.Override"/>).
     /// </summary>
-    public static PrcFaceGraphics[] Slots(PrcTess3D tess)
+    public static PrcFaceGraphics[] Slots(PrcTess3D tess, ReadOnlySpan<int> faceOverrides = default)
     {
         var seen = new HashSet<PrcFaceGraphics>();
         var slots = new List<PrcFaceGraphics>();
-        foreach (PrcTessFace face in tess.FaceTessellationData)
+        PrcTessFace[] faces = tess.FaceTessellationData;
+        for (int f = 0; f < faces.Length; f++)
         {
             // One style for the whole face, or one per primitive (ISO 14739-1, 7.8.6.1).
+            PrcTessFace face = faces[f];
             ReadOnlySpan<uint> styles = face.LineAttributes;
-            int primitives = styles.Length <= 1 ? Math.Min(styles.Length, 1) : PrimitiveCount(face, styles.Length);
+            int over = OverrideOf(faceOverrides, f);
+            int primitives = styles.Length <= 1 ? (styles.Length == 1 || over != 0 ? 1 : 0) : PrimitiveCount(face, styles.Length);
             for (int entity = 0; entity < primitives; entity++)
             {
-                var graphics = new PrcFaceGraphics(styles[entity], face.Behavior);
-                if (graphics.Style != 0 && seen.Add(graphics))
+                var graphics = new PrcFaceGraphics(entity < styles.Length ? styles[entity] : 0, face.Behavior, over);
+                if (graphics.HasSlot && seen.Add(graphics))
                 {
                     slots.Add(graphics);
                 }
@@ -86,7 +98,9 @@ internal static class PrcMesher
     /// Per material slot of <see cref="Slots"/> (entry <c>i</c> for slot <c>i + 1</c>), whether its
     /// triangles are left out of the mesh; empty for none.
     /// </param>
-    public static PrcMesh AddMesh(SceneBuilder builder, PrcTess3D tess, int name, CancellationToken cancellation = default, ReadOnlySpan<bool> hiddenSlots = default)
+    /// <param name="faceOverrides">Per face, what an occurrence says of it (see <see cref="PrcFaceGraphics.Override"/>); empty for nothing.</param>
+    public static PrcMesh AddMesh(SceneBuilder builder, PrcTess3D tess, int name, CancellationToken cancellation = default, ReadOnlySpan<bool> hiddenSlots = default,
+        ReadOnlySpan<int> faceOverrides = default)
     {
         ReadOnlySpan<double> coordinates = tess.TessellationCoordinates.Coordinates;
         ReadOnlySpan<double> normalCoordinates = tess.NormalCoordinates;
@@ -103,7 +117,7 @@ internal static class PrcMesher
         // First pass: how many triangles, and whether every primitive lies within the index array.
         // Faces share the array without overlapping, so together they cannot use more indices than it has:
         // that bounds the work by the size of the data, whatever the faces claim.
-        PrcFaceGraphics[] slotStyles = Slots(tess);
+        PrcFaceGraphics[] slotStyles = Slots(tess, faceOverrides);
         var slotOfStyle = new Dictionary<PrcFaceGraphics, int>(slotStyles.Length);
         for (int i = 0; i < slotStyles.Length; i++)
         {
@@ -130,7 +144,7 @@ internal static class PrcMesher
                     throw Invalid("The faces of a PRC tessellation use more indices than the tessellation has.");
                 }
 
-                if (IsHidden(SlotOf(face, entity++, slotOfStyle), hiddenSlots))
+                if (IsHidden(SlotOf(face, entity++, OverrideOf(faceOverrides, f), slotOfStyle), hiddenSlots))
                 {
                     continue;
                 }
@@ -178,7 +192,7 @@ internal static class PrcMesher
                 int pointOfFace = 0;
                 foreach (PrcPrimitive primitive in PrcFaceLayout.Primitives(face.UsedEntitiesFlag, face.Triangulateddata, faceStarts[f], normalsStored, TextureIndices(face)))
                 {
-                    int slot = SlotOf(face, entity++, slotOfStyle);
+                    int slot = SlotOf(face, entity++, OverrideOf(faceOverrides, f), slotOfStyle);
                     if (IsHidden(slot, hiddenSlots))
                     {
                         // Its points still count: the face's vertex colours are in the order of all of them.
@@ -347,12 +361,16 @@ internal static class PrcMesher
     }
 
     /// <summary>The material slot of a primitive of a face: one style for the whole face, or one per primitive (ISO 14739-1, 7.8.6.1).</summary>
-    private static int SlotOf(PrcTessFace face, int entity, Dictionary<PrcFaceGraphics, int> slotOfStyle)
+    private static int SlotOf(PrcTessFace face, int entity, int over, Dictionary<PrcFaceGraphics, int> slotOfStyle)
     {
         uint[] styles = face.LineAttributes;
         uint style = styles.Length == 0 ? 0 : styles.Length == 1 ? styles[0] : entity < styles.Length ? styles[entity] : 0;
-        return style != 0 && slotOfStyle.TryGetValue(new PrcFaceGraphics(style, face.Behavior), out int slot) ? slot : 0;
+        var graphics = new PrcFaceGraphics(style, face.Behavior, over);
+        return graphics.HasSlot && slotOfStyle.TryGetValue(graphics, out int slot) ? slot : 0;
     }
+
+    /// <summary>What an occurrence says of face <paramref name="face"/>: 0 for nothing.</summary>
+    internal static int OverrideOf(ReadOnlySpan<int> faceOverrides, int face) => (uint)face < (uint)faceOverrides.Length ? faceOverrides[face] : 0;
 
     private static bool IsHidden(int slot, ReadOnlySpan<bool> hiddenSlots) => slot > 0 && slot <= hiddenSlots.Length && hiddenSlots[slot - 1];
 

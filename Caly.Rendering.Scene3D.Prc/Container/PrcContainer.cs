@@ -17,7 +17,13 @@ internal enum PrcSection
     Tessellation = 2,
 
     /// <summary>The exact geometry: topological contexts and their bodies (surfaces and solids as the equations and boundaries they are).</summary>
-    ExactGeometry = 3
+    ExactGeometry = 3,
+
+    /// <summary>
+    /// The extra geometry: a summary of each topological context, with the graphics of its faces (ISO 14739-1, 8.3.9). Empty when
+    /// the file has none.
+    /// </summary>
+    ExtraGeometry = 4
 }
 
 /// <summary>What the uncompressed header of one file structure says.</summary>
@@ -47,19 +53,18 @@ internal readonly struct PrcFileStructureInfo
 /// compressed "model file" that ties the structures together.
 /// <para>
 /// Sections are inflated when first asked for, into pooled buffers, and every byte inflated counts against
-/// <see cref="SceneLimits.MaxInflatedBytes"/>. The exact-geometry section is inflated only when asked for; the extra-geometry
-/// section has no accessor: it is never inflated.
+/// <see cref="SceneLimits.MaxInflatedBytes"/>. The exact-geometry and extra-geometry sections are inflated only when asked for.
 /// </para>
 /// </summary>
 internal sealed class PrcContainer : IDisposable
 {
     private const int UniqueIdBytes = 16;
     private const int DescriptionBytes = UniqueIdBytes + 8 * 4;
-    private const int SectionsPerStructure = 4;
+    private const int SectionsPerStructure = 5;
 
     private readonly ReadOnlyMemory<byte> _payload;
     private readonly SceneLimits _limits;
-    private readonly (int Start, int End)[] _ranges;      // per structure: globals, tree, tessellation, exact geometry
+    private readonly (int Start, int End)[] _ranges;      // per structure: globals, tree, tessellation, exact geometry, extra geometry
     private readonly byte[]?[] _inflated;
     private readonly int[] _inflatedLengths;
     private readonly PrcFileStructureInfo[] _structures;
@@ -119,6 +124,7 @@ internal sealed class PrcContainer : IDisposable
 
         var structures = new PrcFileStructureInfo[count];
         var ranges = new (int, int)[count * SectionsPerStructure];
+        var headers = new int[count];
         for (int i = 0; i < count; i++)
         {
             uint id0 = cursor.UInt32(), id1 = cursor.UInt32(), id2 = cursor.UInt32(), id3 = cursor.UInt32();
@@ -130,7 +136,7 @@ internal sealed class PrcContainer : IDisposable
 
             uint header = cursor.UInt32(), globals = cursor.UInt32(), tree = cursor.UInt32(), tessellation = cursor.UInt32();
             uint geometry = cursor.UInt32();
-            uint extraGeometry = cursor.UInt32();   // where the exact geometry ends; the section itself is never read
+            uint extraGeometry = cursor.UInt32();   // where the exact geometry ends
 
             // The sections follow each other; the three that are always read must each hold something.
             if (!(header <= globals && globals < tree && tree < tessellation && tessellation < geometry && geometry <= extraGeometry && extraGeometry <= (uint)data.Length))
@@ -142,6 +148,8 @@ internal sealed class PrcContainer : IDisposable
             ranges[i * SectionsPerStructure + (int)PrcSection.Tree] = ((int)tree, (int)tessellation);
             ranges[i * SectionsPerStructure + (int)PrcSection.Tessellation] = ((int)tessellation, (int)geometry);
             ranges[i * SectionsPerStructure + (int)PrcSection.ExactGeometry] = ((int)geometry, (int)extraGeometry);
+            ranges[i * SectionsPerStructure + (int)PrcSection.ExtraGeometry] = ((int)extraGeometry, (int)extraGeometry);
+            headers[i] = (int)header;
             structures[i] = ReadStructureHeader(payload, (int)header, (int)globals, id0, id1, id2, id3, i);
         }
 
@@ -149,6 +157,25 @@ internal sealed class PrcContainer : IDisposable
         if (!(modelStart < modelEnd && modelEnd <= (uint)data.Length))
         {
             throw Invalid("The model file of the PRC file lies outside the file.");
+        }
+
+        // The header gives where the extra geometry starts, not where it ends: it ends where the next thing the file holds starts
+        // (another structure's header, or the model file), or with the file.
+        for (int i = 0; i < count; i++)
+        {
+            ref (int Start, int End) extra = ref ranges[i * SectionsPerStructure + (int)PrcSection.ExtraGeometry];
+            int end = data.Length;
+            foreach (int start in headers)
+            {
+                end = start > extra.Start ? Math.Min(end, start) : end;
+            }
+
+            foreach ((int start, _) in ranges)
+            {
+                end = start > extra.Start ? Math.Min(end, start) : end;
+            }
+
+            extra.End = (int)modelStart > extra.Start ? Math.Min(end, (int)modelStart) : end;
         }
 
         // The uncompressed files of the file header itself are not used; the header ends before them.
@@ -196,6 +223,13 @@ internal sealed class PrcContainer : IDisposable
             _modelFile ??= Inflate(_modelFileRange, out _modelFileLength);
             return _modelFile.AsSpan(0, _modelFileLength);
         }
+    }
+
+    /// <summary>Whether a section of a file structure holds anything (the extra geometry may be absent).</summary>
+    public bool HasSection(int fileStructure, PrcSection section)
+    {
+        (int start, int end) = _ranges[fileStructure * SectionsPerStructure + (int)section];
+        return end > start;
     }
 
     /// <summary>A section of a file structure, inflated on first use.</summary>

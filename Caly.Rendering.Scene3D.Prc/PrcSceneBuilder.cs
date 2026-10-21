@@ -50,6 +50,10 @@ internal sealed class PrcSceneBuilder
     private readonly int _emptyName;
     private int _markupMaterial = -1;
 
+    // What the occurrences on the way down say of entities under them, and the bodies they say something of single faces of (how many faces).
+    private readonly Dictionary<Target, EntityOverride> _overrides = [];
+    private readonly Dictionary<(int Structure, uint Context, uint Body), int> _faceOverrideBodies = [];
+
     private PrcSceneBuilder(PrcFile file, SceneBuilder builder, CancellationToken cancellation)
     {
         _file = file;
@@ -83,8 +87,29 @@ internal sealed class PrcSceneBuilder
 
     private readonly record struct OccurrenceId(int Structure, int Index);
 
-    /// <summary>A tessellation as one of the meshes made of it: <paramref name="Hidden"/> says which of its material slots are left out ("" for none).</summary>
-    private readonly record struct MeshKey(int Structure, int Tessellation, string Hidden);
+    /// <summary>The graphics an occurrence gives an entity under it: a style of the occurrence's file structure, and behaviour bits.</summary>
+    /// <remarks><paramref name="Placement"/>: a coordinate system of that file structure, as its index plus one (0 for none), that places an item in its part.</remarks>
+    private readonly record struct EntityOverride(int StyleStructure, uint Style, int Behavior, uint Placement = 0);
+
+    /// <summary>
+    /// An entity an occurrence says something of, in file structure <paramref name="Structure"/>: a representation item, by its type
+    /// and unique identifier (<paramref name="Body"/> and <paramref name="Face"/> 0), or a face (<c>PRC_TYPE_TOPO_Face</c>), by the
+    /// topological context (<paramref name="Id"/>) and body as an item names them (from 1), and its number in the body plus one.
+    /// </summary>
+    private readonly record struct Target(int Structure, uint Type, uint Id, uint Body, uint Face)
+    {
+        public static Target Item(int structure, uint type, uint uniqueId) => new(structure, type, uniqueId, 0, 0);
+
+        public static Target FaceOf(int structure, uint context, uint body, uint face) => new(structure, PrcType.PRC_TYPE_TOPO_Face, context, body, face + 1);
+
+        public bool IsFace => Face != 0;
+    }
+
+    /// <summary>
+    /// A tessellation as one of the meshes made of it: <paramref name="Hidden"/> says which of its material slots are left out ("" for none),
+    /// <paramref name="Faces"/> which faces have slots of their own for what an occurrence says of them ("" for none).
+    /// </summary>
+    private readonly record struct MeshKey(int Structure, int Tessellation, string Hidden, string Faces);
 
     public static void Build(PrcFile file, SceneBuilder builder, CancellationToken cancellation)
     {
@@ -183,6 +208,7 @@ internal sealed class PrcSceneBuilder
         }
 
         Apply(ref appearance, id.Structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField, show: true);
+        List<Target>? overridden = AddOverrides(occurrence, id.Structure, null);
 
         // What the occurrence shows: its own part and sons, else those of its prototype (or of its
         // external data), through as many prototypes as it takes. The occurrences on that way add
@@ -215,6 +241,7 @@ internal sealed class PrcSceneBuilder
                 }
 
                 Apply(ref appearance, current.Structure, g.BiasedIndexOfLineStyle, g.BehaviorBitField, show: true);
+                overridden = AddOverrides(o, current.Structure, overridden);
                 if (name.Length == 0)
                 {
                     name = o.Base.Base.Base.EntityName.Name;
@@ -345,6 +372,96 @@ internal sealed class PrcSceneBuilder
 
             bool IsDefault(uint index) => ((byte)Occurrence(new OccurrenceId(sons.Structure, (int)index)).ProductInformation.ProductInformationFlags & FlagDefault) != 0;
         }
+
+        // What it said of the entities under it holds below it only (an exception ends the whole build).
+        foreach (Target key in overridden ?? [])
+        {
+            _overrides.Remove(key);
+            if (key.IsFace)
+            {
+                var body = (key.Structure, key.Id, key.Body);
+                int left = _faceOverrideBodies[body] - 1;
+                if (left == 0)
+                {
+                    _faceOverrideBodies.Remove(body);
+                }
+                else
+                {
+                    _faceOverrideBodies[body] = left;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes what an occurrence says of entities under it (its <c>entity_reference</c>: ISO 14739-1, "modifiers towards their nominal
+    /// definition, which may include location, color, and visibility") for the occurrences and items below it. Assemblies colour the
+    /// items of their parts that way, and cut them away (the Tetra4D Turbine: its blades, bearings and hoses are coloured, and half its
+    /// cover and most of its housing removed, by the assembly only). It may also say something of single faces of the bodies of its
+    /// parts (ISO 14739-1, 7.4.7: the body's topological context and number, and the face's number in the body), as nine samples of
+    /// the corpus colour theirs. Of two occurrences that say something of the same entity the outer one wins: the assembly has the
+    /// last word over its subassemblies. Returns the keys it added, for the caller to take back.
+    /// </summary>
+    private List<Target>? AddOverrides(PrcAsmProductOccurrence occurrence, int structure, List<Target>? added)
+    {
+        foreach (PrcMiscEntityReference reference in occurrence.EntityReference)
+        {
+            PrcContentEntityReference content = reference.ContentEntityReference;
+            PrcGraphicsContent graphics = content.Base.GraphicsContent;
+            bool says = graphics.BiasedIndexOfLineStyle != 0 || (graphics.BehaviorBitField & Removed) != 0;
+            uint placement = 0;
+            Target key;
+            switch (content.ReferenceData?.Data)
+            {
+                case PrcMiscReferenceOnTopology { TypeOfEntity: PrcType.PRC_TYPE_TOPO_Face, Data: { Indices.Length: 1 } face }:
+                    if (content.IndexOfLocalCoordinateSystem != 0)
+                    {
+                        // A face is drawn with its body: it cannot be moved apart from it.
+                        Note("prc-topology-reference-not-applied", "What the PRC assembly says of edges, vertices, or faces it does not locate or moves, in its parts is not applied.");
+                    }
+
+                    if (!says)
+                    {
+                        continue;
+                    }
+
+                    key = Target.FaceOf(face.Flag ? structure : FindStructure(face.UniqueId), face.IndexOfTopologicalIndex, face.IndexOfBody, face.Indices[0]);
+                    break;
+
+                case PrcMiscReferenceOnTopology:
+                    // Edges and vertices are there for markups to point at; a face without its body cannot be found.
+                    Note("prc-topology-reference-not-applied", "What the PRC assembly says of edges, vertices, or faces it does not locate or moves, in its parts is not applied.");
+                    continue;
+
+                case PrcMiscReferenceOnPRCBase target:
+                    // The coordinate system counts from 1, as an item's own does (a reference of the PROSTEP Camera sample names the
+                    // last of its 239 systems by 239), though ISO 14739-1 7.4.10.1 says "-1 if none".
+                    placement = content.IndexOfLocalCoordinateSystem;
+                    if (!says && placement == 0)
+                    {
+                        continue;
+                    }
+
+                    key = Target.Item(target.Flag ? structure : FindStructure(target.DifferentUniqueId), target.TypeOfEntity, target.UniqueId);
+                    break;
+
+                default:
+                    continue;
+            }
+
+            if (key.Structure >= 0 && _overrides.TryAdd(key, new EntityOverride(structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField, placement)))
+            {
+                added ??= [];
+                added.Add(key);
+                if (key.IsFace)
+                {
+                    var body = (key.Structure, key.Id, key.Body);
+                    _faceOverrideBodies[body] = _faceOverrideBodies.GetValueOrDefault(body) + 1;
+                }
+            }
+        }
+
+        return added;
     }
 
     /// <summary>
@@ -490,21 +607,26 @@ internal sealed class PrcSceneBuilder
         }
 
         Apply(ref appearance, structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField, show: true);
-        PrcFileStructureData data = _file.FileStructures[structure];
-
-        Matrix4x4 local = Matrix4x4.Identity;
-        if (content.BiasedIndexLocalCoordinateSystem != 0)
+        Matrix4x4 local;
+        if (_overrides.Count != 0 && _overrides.TryGetValue(Target.Item(structure, type, content.Base.Base.UniqueId), out EntityOverride over))
         {
-            uint index = content.BiasedIndexLocalCoordinateSystem - 1;
-            if (index >= (uint)data.Globals.RefCoords.Length)
+            if ((over.Behavior & Removed) != 0)
             {
-                Warn("prc-missing-coordinate-system", "An item of the PRC model names a coordinate system that does not exist; it is placed without one.");
+                return;
             }
-            else if (!PrcTransforms.TryGetMatrix(data.Globals.RefCoords[index].Transform, out local))
-            {
-                Warn("prc-non-finite-transform", "A placement in the PRC assembly has values that are not numbers; it was ignored.");
-            }
+
+            // An occurrence's style is applied over the item's own, and then holds for the item's faces and members: the assembly's
+            // appearance of a part overrides the part's (the Turbine's parts give every face their own grey). Its coordinate system,
+            // one of the occurrence's file structure, places the item in its part instead of the item's own.
+            ApplyOverride(ref appearance, over);
+            local = over.Placement != 0 ? Placement(over.StyleStructure, over.Placement) : Placement(structure, content.BiasedIndexLocalCoordinateSystem);
         }
+        else
+        {
+            local = Placement(structure, content.BiasedIndexLocalCoordinateSystem);
+        }
+
+        PrcFileStructureData data = _file.FileStructures[structure];
 
         var node = new SceneNode
         {
@@ -528,6 +650,11 @@ internal sealed class PrcSceneBuilder
         {
             if (solid is { ExactGeometry: true })
             {
+                if (_faceOverrideBodies.ContainsKey((structure, solid.IndexTopologicalContext, solid.IndexBody)))
+                {
+                    Note("prc-face-reference-not-applied", "What the PRC assembly says of single faces of solids drawn from their exact geometry is not applied.");
+                }
+
                 AddBrep(solid, node, data, structure, appearance);
                 return;
             }
@@ -563,8 +690,21 @@ internal sealed class PrcSceneBuilder
 
         // The faces that have a style are the youngest sons of this item, one material slot each. A
         // face may say that it is not shown: it is then left out of the mesh this item draws, which
-        // is the tessellation's own mesh unless a face is left out.
-        if (!_slots.TryGetValue((structure, tessellationIndex), out PrcFaceGraphics[]? slots))
+        // is the tessellation's own mesh unless a face is left out. The faces an occurrence says
+        // something of have slots of their own: a face's number in its body is its number in the
+        // tessellation of the body's item (the faces of a tessellation are those of its body in the
+        // order of the body's shells, and the faces the corpus's references colour together touch
+        // each other more often read so than by the order the body stores them in).
+        List<EntityOverride>? said = null;
+        int[]? faceOverrides = solid is not null && _faceOverrideBodies.Count != 0
+            ? FaceOverrides(structure, solid, plain?.FaceTessellationData.Length ?? compressed!.FaceCount, out said)
+            : null;
+        PrcFaceGraphics[]? slots;
+        if (faceOverrides is not null)
+        {
+            slots = plain is not null ? PrcMesher.Slots(plain, faceOverrides) : PrcCompressedMesher.Slots(compressed!, faceOverrides);
+        }
+        else if (!_slots.TryGetValue((structure, tessellationIndex), out slots))
         {
             slots = plain is not null ? PrcMesher.Slots(plain) : PrcCompressedMesher.Slots(compressed!);
             _slots.Add((structure, tessellationIndex), slots);
@@ -575,23 +715,36 @@ internal sealed class PrcSceneBuilder
         bool[]? hidden = null;
         for (int i = 0; i < slots.Length; i++)
         {
+            // A face that names no style says nothing of itself (it would have no slot of its own): only the occurrence's word counts.
             ofFaces[i] = appearance;
-            Apply(ref ofFaces[i], structure, slots[i].Style, (int)slots[i].Behavior, show: facesSay);
-            if (!ofFaces[i].Shown && appearance.Shown)
+            if (slots[i].Style != 0)
+            {
+                Apply(ref ofFaces[i], structure, slots[i].Style, (int)slots[i].Behavior, show: facesSay);
+            }
+
+            bool removed = false;
+            if (slots[i].Override != 0)
+            {
+                EntityOverride ofFace = said![slots[i].Override - 1];
+                removed = (ofFace.Behavior & Removed) != 0;
+                ApplyOverride(ref ofFaces[i], ofFace);
+            }
+
+            if (removed || (!ofFaces[i].Shown && appearance.Shown))
             {
                 hidden ??= new bool[slots.Length];
                 hidden[i] = true;
             }
         }
 
-        var key = new MeshKey(structure, tessellationIndex, hidden is null ? "" : string.Concat(hidden.Select(h => h ? '1' : '0')));
+        var key = new MeshKey(structure, tessellationIndex, hidden is null ? "" : string.Concat(hidden.Select(h => h ? '1' : '0')), Signature(faceOverrides));
         if (!_meshes.TryGetValue(key, out PrcMesh mesh))
         {
             if (plain is not null)
             {
-                mesh = PrcMesher.AddMesh(_builder, plain, node.Name, _cancellation, hidden);
+                mesh = PrcMesher.AddMesh(_builder, plain, node.Name, _cancellation, hidden, faceOverrides);
             }
-            else if (!PrcCompressedMesher.TryAddMesh(_builder, compressed!, node.Name, out mesh, out _, _cancellation, hidden))
+            else if (!PrcCompressedMesher.TryAddMesh(_builder, compressed!, node.Name, out mesh, out _, _cancellation, hidden, faceOverrides))
             {
                 // A model is shown whole or said to be incomplete: the reader's caller decides.
                 _undecoded.Add((structure, tessellationIndex));
@@ -621,6 +774,82 @@ internal sealed class PrcSceneBuilder
         }
 
         _builder.AddNode(node);
+    }
+
+    /// <summary>The placement a coordinate system of a file structure gives (its index plus one; 0 for none): identity when there is none.</summary>
+    private Matrix4x4 Placement(int structure, uint biasedIndex)
+    {
+        Matrix4x4 local = Matrix4x4.Identity;
+        if (biasedIndex != 0)
+        {
+            PrcRiCoordinateSystem[] systems = _file.FileStructures[structure].Globals.RefCoords;
+            if (biasedIndex - 1 >= (uint)systems.Length)
+            {
+                Warn("prc-missing-coordinate-system", "An item of the PRC model names a coordinate system that does not exist; it is placed without one.");
+            }
+            else if (!PrcTransforms.TryGetMatrix(systems[biasedIndex - 1].Transform, out local))
+            {
+                Warn("prc-non-finite-transform", "A placement in the PRC assembly has values that are not numbers; it was ignored.");
+                local = Matrix4x4.Identity;
+            }
+        }
+
+        return local;
+    }
+
+    /// <summary>
+    /// What the occurrences above an item say of the faces of its body, by the face's number in the item's tessellation of
+    /// <paramref name="faceCount"/> faces: each different thing said once in <paramref name="said"/>, and per face its number there
+    /// plus one (0 for nothing). Null when nothing is said of them.
+    /// </summary>
+    private int[]? FaceOverrides(int structure, PrcRiBrepModel solid, int faceCount, out List<EntityOverride>? said)
+    {
+        said = null;
+        if (!_faceOverrideBodies.TryGetValue((structure, solid.IndexTopologicalContext, solid.IndexBody), out int left))
+        {
+            return null;
+        }
+
+        int[]? faces = null;
+        for (int f = 0; f < faceCount && left > 0; f++)
+        {
+            if (_overrides.TryGetValue(Target.FaceOf(structure, solid.IndexTopologicalContext, solid.IndexBody, (uint)f), out EntityOverride over))
+            {
+                said ??= [];
+                int number = said.IndexOf(over);
+                if (number < 0)
+                {
+                    said.Add(over);
+                    number = said.Count - 1;
+                }
+
+                faces ??= new int[faceCount];
+                faces[f] = number + 1;
+                left--;
+            }
+        }
+
+        return faces;
+    }
+
+    /// <summary>Which faces have which of the things said of them, for a mesh key: the faces nothing is said of are left out.</summary>
+    private static string Signature(int[]? faceOverrides)
+    {
+        if (faceOverrides is null)
+        {
+            return "";
+        }
+
+        var text = new System.Text.StringBuilder();
+        for (int f = 0; f < faceOverrides.Length; f++)
+        {
+            if (faceOverrides[f] != 0)
+            {
+                text.Append(f).Append('=').Append(faceOverrides[f]).Append(',');
+            }
+        }
+
+        return text.ToString();
     }
 
     /// <summary>
@@ -666,7 +895,11 @@ internal sealed class PrcSceneBuilder
             // unusable 0 on 11: the sample whose parts are 0.19 across and are placed a hundred apart).
             PrcTopoContext context = contexts[contextIndex];
             double scale = context.HasScale && double.IsFinite(context.Scale) && context.Scale > 0 ? context.Scale : 1;
-            mesh = PrcBrepTessellator.AddMesh(_builder, brep, node.Name, out PrcBrepTessellation result, scale, _cancellation);
+            // The colours of single faces are in the extra geometry; a body converted from an uncompressed one has none read.
+            PrcFaceGraphics[]? faceGraphics = body.Id is PrcTopoBrepDataCompress
+                ? PrcFaceStyles.Of(data.ExtraGeometry, contexts, (int)contextIndex, (int)bodyIndex)
+                : null;
+            mesh = PrcBrepTessellator.AddMesh(_builder, brep, node.Name, out PrcBrepTessellation result, scale, _cancellation, faceGraphics);
             _brepFaces += result.Faces;
             _brepDropped += result.FacesDropped;
             _brepUnsupported += result.FacesUnsupported;
@@ -681,9 +914,17 @@ internal sealed class PrcSceneBuilder
             return;
         }
 
+        // Slot 0 is for the faces without a style of their own; a face's style is applied over the item's as a tessellation's is.
         node.Mesh = mesh.Mesh;
-        node.BindingCount = 1;
+        node.BindingCount = mesh.Slots.Length + 1;
         node.FirstBinding = _builder.AddBinding(Material(appearance, mesh.HasColors));
+        foreach (PrcFaceGraphics slot in mesh.Slots)
+        {
+            Appearance ofFace = appearance;
+            Apply(ref ofFace, structure, slot.Style, (int)slot.Behavior, show: false);
+            _builder.AddBinding(Material(ofFace, mesh.HasColors));
+        }
+
         _builder.AddNode(node);
     }
 
@@ -791,7 +1032,7 @@ internal sealed class PrcSceneBuilder
     {
         if (style != 0)
         {
-            if (!appearance.ColorForced || (behavior & SonHeritColor) != 0)
+            if (HasColor(structure, style) && (!appearance.ColorForced || (behavior & SonHeritColor) != 0))
             {
                 appearance.ColorStructure = structure;
                 appearance.ColorStyle = style;
@@ -811,6 +1052,29 @@ internal sealed class PrcSceneBuilder
             appearance.Shown = (behavior & Show) != 0;
             appearance.ShowForced = (behavior & (FatherHeritShow | SonHeritShow)) == FatherHeritShow;
         }
+    }
+
+    /// <summary>
+    /// What an occurrence says of an entity under it, over what the entity has: its style is applied with the occurrence's behaviour,
+    /// and then holds for what is under the entity, as a father's that is inherited would.
+    /// </summary>
+    private void ApplyOverride(ref Appearance appearance, EntityOverride over)
+    {
+        bool colour = over.Style != 0 && HasColor(over.StyleStructure, over.Style) && (!appearance.ColorForced || (over.Behavior & SonHeritColor) != 0);
+        bool transparency = over.Style != 0 && HasTransparency(over.StyleStructure, over.Style) && (!appearance.TransparencyForced || (over.Behavior & SonHeritTransparency) != 0);
+        Apply(ref appearance, over.StyleStructure, over.Style, over.Behavior, show: false);
+        appearance.ColorForced |= colour;
+        appearance.TransparencyForced |= transparency;
+    }
+
+    /// <summary>
+    /// Whether a style gives a colour or a material: one that names neither says only how transparent it is, and leaves the colour to
+    /// the fathers. A style that is not there counts as one (it is reported when the material is made).
+    /// </summary>
+    private bool HasColor(int structure, uint style)
+    {
+        PrcGraphStyle[] styles = _file.FileStructures[structure].Globals.Styles;
+        return style - 1 >= (uint)styles.Length || styles[style - 1].BiasedColorIndex != 0;
     }
 
     private bool HasTransparency(int structure, uint style)
