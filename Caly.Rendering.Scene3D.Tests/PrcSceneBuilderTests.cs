@@ -733,36 +733,159 @@ public class PrcSceneBuilderTests
         Assert.Equal(Yellow, MaterialOf(overridden, "blade", 0).Diffuse);
     }
 
-    [Fact]
-    public void WhatAnOccurrenceSaysOfFacesOrPlacesIsReportedNotApplied()
+    /// <summary>An item of exact geometry that shows a tessellation: body <paramref name="body"/> of topological context <paramref name="context"/> (both counted from 1).</summary>
+    private static PrcRiRepresentationItem BrepItem(string name, uint tessellation, uint context = 1, uint body = 1) => new()
     {
-        PrcRiRepresentationItem body = Solid("body", 1);
-        var face = new PrcMiscEntityReference
+        Data = new PrcRiBrepModel
         {
-            ContentEntityReference = new PrcContentEntityReference
+            ItemContent = new PrcRepresentationItemContent { Base = Base(name), BiasedIndexLocalCoordinateSystem = 0, BiasedIndexTessellation = tessellation },
+            ExactGeometry = true,
+            IndexTopologicalContext = context,
+            IndexBody = body,
+        },
+        DataType = PrcType.PRC_TYPE_RI_BrepModel,
+    };
+
+    /// <summary>What an occurrence says of face <paramref name="face"/> (counted from 0) of a body.</summary>
+    private static PrcMiscEntityReference FaceReference(uint face, uint style = 0, ushort behavior = Shown, PrcUniqueId? inStructure = null, uint context = 1, uint body = 1,
+        uint type = PrcType.PRC_TYPE_TOPO_Face) => new()
+    {
+        ContentEntityReference = new PrcContentEntityReference
+        {
+            Base = Base("", style, behavior),
+            IndexOfLocalCoordinateSystem = 0,
+            Flag = true,
+            ReferenceData = new PrcReferenceData
             {
-                Base = Base("", 1),
-                IndexOfLocalCoordinateSystem = 0,
-                Flag = true,
-                ReferenceData = new PrcReferenceData
+                DataType = PrcType.PRC_TYPE_MISC_ReferenceOnTopology,
+                Data = new PrcMiscReferenceOnTopology
                 {
-                    DataType = PrcType.PRC_TYPE_MISC_ReferenceOnTopology,
-                    Data = new PrcMiscReferenceOnTopology
+                    TypeOfEntity = type,
+                    Flag = true,
+                    Data = new PrcAdditionalTargetData
                     {
-                        TypeOfEntity = PrcType.PRC_TYPE_TOPO_Face,
-                        Flag = true,
-                        Data = new PrcAdditionalTargetData { Flag = true, UniqueId = default, IndexOfTopologicalIndex = 0, IndexOfBody = 0, NumberOfIndices = 1, Indices = [0] },
+                        Flag = inStructure is null,
+                        UniqueId = inStructure ?? default,
+                        IndexOfTopologicalIndex = context,
+                        IndexOfBody = body,
+                        NumberOfIndices = 1,
+                        Indices = [face],
                     },
                 },
             },
+        },
+    };
+
+    /// <summary>The colours the triangles of the <paramref name="instance"/>-th mesh node are drawn in, with how many triangles each.</summary>
+    private static string TriangleColours(Scene scene, int instance)
+    {
+        SceneNode node = scene.Nodes.ToArray().Where(n => n.Mesh >= 0).ElementAt(instance);
+        SceneMesh mesh = scene.Meshes[node.Mesh];
+        var colours = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (SceneMeshPart part in scene.Parts.Slice(mesh.FirstPart, mesh.PartCount))
+        {
+            Vector3 d = scene.Materials[scene.Bindings[node.FirstBinding + part.ShadingId]].Diffuse;
+            string name = d == Red ? "red" : d == Green ? "green" : d == Yellow ? "yellow" : d == Blue ? "blue" : d == Grey ? "grey" : d.ToString();
+            colours[name] = colours.GetValueOrDefault(name) + (part.IndexCount / 3);
+        }
+
+        return string.Join(" ", colours.Select(c => $"{c.Key}:{c.Value}"));
+    }
+
+    /// <summary>
+    /// An occurrence colours single faces of the bodies of its parts too, or removes them (a topology reference: the body as its
+    /// item names it, and the face's number in it, which is the face's number in the item's tessellation). That holds for that use
+    /// of the part only, over the face's own style, and of two occurrences the outer one wins.
+    /// </summary>
+    [Fact]
+    public void AnOccurrenceRecoloursOrRemovesSingleFacesOfItsParts()
+    {
+        // The parts' file structure: style 1 is red there; face 0 of the body says red, faces 1 and 2 nothing.
+        PrcFileStructureData parts = Structure(
+            [Occurrence("body definition", part: 1)],
+            [Part("part", BrepItem("body", 1))], [Mesh((1, Shown), (0, 0), (0, 0))], id: 50);
+
+        // The assembly's own styles: 1 is green, 2 is yellow.
+        PrcGraphStyle[] assemblyStyles = [Colour(4), Colour(10)];
+        PrcFileStructureData assembly = Structure(
+            [
+                Occurrence("body 1", prototype: 1, prototypeIn: Id(50), references: [FaceReference(0, style: 1, inStructure: Id(50)), FaceReference(2, style: 2, inStructure: Id(50))]),
+                Occurrence("body 2", prototype: 1, prototypeIn: Id(50)),
+                Occurrence("body 3", prototype: 1, prototypeIn: Id(50), references: [FaceReference(1, behavior: Removed, inStructure: Id(50))]),
+                Occurrence("engine", sons: [0, 1, 2]),
+            ],
+            id: 60, styles: assemblyStyles);
+
+        using Scene scene = Build(File(parts, assembly));
+        Assert.Equal("green:1 grey:1 yellow:1", TriangleColours(scene, 0));
+        Assert.Equal("grey:2 red:1", TriangleColours(scene, 1));
+        Assert.Equal("grey:1 red:1", TriangleColours(scene, 2));
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-face-reference-not-applied");
+
+        // Of two occurrences that say something of the same face, the outer one (the assembly) has the last word.
+        PrcFileStructureData outer = Structure(
+            [
+                Occurrence("body 1", prototype: 1, prototypeIn: Id(50), references: [FaceReference(0, style: 1, inStructure: Id(50))]),
+                Occurrence("engine", sons: [0], references: [FaceReference(0, style: 2, inStructure: Id(50))]),
+            ],
+            id: 60, styles: assemblyStyles);
+        using Scene overridden = Build(File(parts, outer));
+        Assert.Equal("grey:2 yellow:1", TriangleColours(overridden, 0));
+    }
+
+    [Fact]
+    public void AnOccurrenceRecoloursAFaceOfACompressedMesh()
+    {
+        PrcFileStructureData parts = Structure([Occurrence("definition", part: 1)], [Part("part", BrepItem("body", 1))], [Compressed(style: 1)], id: 50);
+        PrcFileStructureData assembly = Structure(
+            [Occurrence("body 1", prototype: 1, prototypeIn: Id(50), references: [FaceReference(0, style: 2, inStructure: Id(50))]), Occurrence("root", sons: [0])],
+            id: 60, styles: [Colour(4), Colour(10)]);
+
+        using Scene scene = Build(File(parts, assembly));
+        Assert.Equal("yellow:1", TriangleColours(scene, 0));
+    }
+
+    [Fact]
+    public void WhatAnOccurrenceSaysOfOtherTopologyIsReportedNotApplied()
+    {
+        PrcRiRepresentationItem body = Solid("body", 1);
+        PrcMiscEntityReference edge = FaceReference(0, style: 1, type: PrcType.PRC_TYPE_TOPO_Edge);
+
+        using Scene scene = Build(File(Structure([Occurrence("root", part: 1, references: [edge])], [Part("p", body)])));
+        Assert.Contains(scene.Diagnostics, d => d.Code == "prc-topology-reference-not-applied");
+    }
+
+    /// <summary>
+    /// An occurrence may place an item of its part elsewhere: its reference names a coordinate system of the occurrence's own file
+    /// structure (counted from 1), which is then the item's placement in its part, in place of the item's own, for that use of the
+    /// part only (PROSTEP's Camera sample lines its display icons up that way). A style given with it is applied too.
+    /// </summary>
+    [Fact]
+    public void AnOccurrenceMovesAnItemOfItsPart()
+    {
+        PrcRiCoordinateSystem System(double x, double y, double z) => new()
+        {
+            Transform = new PrcMiscCartesianTransformation { Transform = Translation(x, y, z) },
+            TransformType = PrcType.PRC_TYPE_MISC_CartesianTransformation,
         };
 
-        using Scene scene = Build(File(Structure([Occurrence("root", part: 1, references: [face, Reference(body, style: 2, coordinateSystem: 1)])], [Part("p", body)])));
-        Assert.Contains(scene.Diagnostics, d => d.Code == "prc-face-reference-not-applied");
-        Assert.Contains(scene.Diagnostics, d => d.Code == "prc-reference-placement-not-applied");
+        PrcRiRepresentationItem moved = Solid("moved", 1, coordinateSystem: 1);
+        PrcFileStructureData parts = Structure([Occurrence("definition", part: 1)], [Part("part", moved)], id: 50, coordinateSystems: [System(0, 0, 7)]);
+        PrcFileStructureData assembly = Structure(
+            [
+                Occurrence("use 1", prototype: 1, prototypeIn: Id(50), references: [Reference(moved, style: 1, inStructure: Id(50), coordinateSystem: 2)]),
+                Occurrence("use 2", prototype: 1, prototypeIn: Id(50)),
+                Occurrence("root", sons: [0, 1]),
+            ],
+            id: 60, styles: [Colour(4)], coordinateSystems: [System(9, 9, 9), System(5, 0, 0)]);
 
-        // The colour of a reference that also moves its item is still applied.
-        Assert.Equal(Green, MaterialOf(scene, "body", 0).Diffuse);
+        using Scene scene = Build(File(parts, assembly));
+        int[] instances = [.. Enumerable.Range(0, scene.Nodes.Length).Where(i => Plain(scene.GetName(scene.Nodes[i].Name)) == "moved")];
+        Assert.Equal(2, instances.Length);
+        Assert.Equal(new Vector3(5, 0, 0), Vector3.Transform(Vector3.Zero, scene.GetWorldMatrix(instances[0])));
+        Assert.Equal(new Vector3(0, 0, 7), Vector3.Transform(Vector3.Zero, scene.GetWorldMatrix(instances[1])));
+        Assert.Equal(Green, MaterialOf(scene, "moved", 0).Diffuse);
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-reference-placement-not-applied");
     }
 
     [Fact]

@@ -170,6 +170,89 @@ public class PrcBrepCorpusTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// The ABM8 crystal's parts are grey: the gold of the four pads under each of its three packages is what its assembly says of
+    /// single faces of their bodies (topology references), by the face's number in the body's tessellation. Read by the order the
+    /// body stores its faces in, the colour lands on faces scattered over the package instead.
+    /// </summary>
+    [Fact]
+    public void TheCrystalHasThePadsItsAssemblyColours()
+    {
+        string? path = PrcCompressedCorpusTests.ExtraCorpusFiles().FirstOrDefault(f => f.Contains("ABM8-3D", StringComparison.Ordinal));
+        if (path is null)
+        {
+            return;
+        }
+
+        using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
+
+        var triangles = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (SceneNode node in scene.Nodes)
+        {
+            if (node.Mesh < 0 || !node.Visible)
+            {
+                continue;
+            }
+
+            SceneMesh mesh = scene.Meshes[node.Mesh];
+            foreach (SceneMeshPart part in scene.Parts.Slice(mesh.FirstPart, mesh.PartCount))
+            {
+                System.Numerics.Vector3 d = scene.Materials[scene.Bindings[node.FirstBinding + part.ShadingId]].Diffuse;
+                string colour = $"{(int)Math.Round(d.X * 255)},{(int)Math.Round(d.Y * 255)},{(int)Math.Round(d.Z * 255)}";
+                triangles[colour] = triangles.GetValueOrDefault(colour) + (part.IndexCount / 3);
+            }
+        }
+
+        // The pads are yellow in this file; the rest stays the parts' greys.
+        Assert.Equal("192,192,192:856 255,255,0:39 64,64,64:2809", string.Join(" ", triangles.Select(t => $"{t.Key}:{t.Value}")));
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code is "prc-face-reference-not-applied" or "prc-topology-reference-not-applied");
+    }
+
+    /// <summary>
+    /// PROSTEP's Camera has the icons of its display placed by its assembly: the "Icons" occurrence's references name coordinate
+    /// systems of its own file structure (counted from 1) that place each item of the icons' part. So placed, the 118 icon meshes
+    /// lie on the face of the display (the screen of the "Frame" part: x 59.6 to 104.4, y 16.1 to 55.9, its face at z -41.2).
+    /// </summary>
+    [Fact]
+    public void TheCameraHasTheIconsOnItsDisplay()
+    {
+        string? path = PrcCompressedCorpusTests.ExtraCorpusFiles().FirstOrDefault(f => f.Contains("PROSTEP-Camera_Features", StringComparison.Ordinal));
+        if (path is null)
+        {
+            return;
+        }
+
+        using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
+        int icons = 0;
+        for (int i = 0; i < scene.Nodes.Length; i++)
+        {
+            SceneNode node = scene.Nodes[i];
+            if (node.Mesh < 0 || !node.Visible || node.Parent < 0 || PrcSceneBuilderTests.Plain(scene.GetName(scene.Nodes[node.Parent].Name)) != "Icons")
+            {
+                continue;
+            }
+
+            SceneBounds local = scene.Meshes[node.Mesh].Bounds;
+            System.Numerics.Matrix4x4 world = scene.GetWorldMatrix(i);
+            SceneBounds box = SceneBounds.Empty;
+            for (int c = 0; c < 8; c++)
+            {
+                box.Include(System.Numerics.Vector3.Transform(new System.Numerics.Vector3((c & 1) == 0 ? local.Min.X : local.Max.X, (c & 2) == 0 ? local.Min.Y : local.Max.Y, (c & 4) == 0 ? local.Min.Z : local.Max.Z), world));
+            }
+
+            Assert.InRange(box.Min.X, 59.6f, 104.4f);
+            Assert.InRange(box.Max.X, 59.6f, 104.4f);
+            Assert.InRange(box.Min.Y, 16.1f, 55.9f);
+            Assert.InRange(box.Max.Y, 16.1f, 55.9f);
+            Assert.InRange(box.Min.Z, -41.25f, -41.05f);
+            Assert.InRange(box.Max.Z, -41.25f, -41.05f);
+            icons++;
+        }
+
+        Assert.Equal(118, icons);
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-reference-placement-not-applied");
+    }
+
+    /// <summary>
     /// A spline surface that closes in u has its last row of control points on its first. The first column is stored as steps and
     /// closes by itself; the rest are corrections to a prediction, and close only if they are read right: types 1 and 2 in the local
     /// frame of the two steps before, type 3 in plain coordinates. Read so, every closed net of the corpus closes to within two
