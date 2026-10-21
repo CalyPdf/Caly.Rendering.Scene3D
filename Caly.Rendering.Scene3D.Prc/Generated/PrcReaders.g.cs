@@ -351,39 +351,73 @@ internal static partial class PrcReaders
     }
 
     // FontKey
-    internal static void ReadFontKey(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcFontKey ReadFontKey(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("FontKey", r.BitPosition);
-        r.ReadUnsignedInteger();
-        r.ReadCharacter();
+        uint font_size = r.ReadUnsignedInteger();
+        sbyte font_attributes = r.ReadCharacter();
         ctx.Leave();
+        return new PrcFontKey
+        {
+            FontSize = font_size,
+            FontAttributes = font_attributes,
+        };
     }
 
     // FontKeysSameFont
-    internal static void ReadFontKeysSameFont(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcFontKeysSameFont ReadFontKeysSameFont(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("FontKeysSameFont", r.BitPosition);
-        r.SkipString();
-        r.ReadUnsignedInteger();
+        string font_name = r.ReadString();
+        uint character_set = r.ReadUnsignedInteger();
         uint key_count = r.ReadUnsignedInteger();
-        for (int i = 0, n = ctx.Count(ref r, (long)key_count, 9); i < n; i++)
+        PrcFontKey[] font_key_list = [];
+        int font_key_list__count = ctx.Count(ref r, (long)key_count, 9);
+        ctx.Charge(font_key_list__count * 48L);
+        font_key_list = new PrcFontKey[Math.Min(font_key_list__count, 256)];
+        for (int i = 0; i < font_key_list__count; i++)
         {
-            ReadFontKey(ref r, ctx);
+            if (i == font_key_list.Length)
+            {
+                Array.Resize(ref font_key_list, (int)Math.Min(font_key_list.Length * 2L, font_key_list__count));
+            }
+
+            font_key_list[i] = ReadFontKey(ref r, ctx);
         }
         ctx.Leave();
+        return new PrcFontKeysSameFont
+        {
+            FontName = font_name,
+            CharacterSet = character_set,
+            FontKeyList = font_key_list,
+        };
     }
 
     // MarkupSerializationHelper
-    internal static void ReadMarkupSerializationHelper(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcMarkupSerializationHelper ReadMarkupSerializationHelper(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("MarkupSerializationHelper", r.BitPosition);
-        r.SkipString();
+        string default_font_family_name = r.ReadString();
         uint font_keys_count = r.ReadUnsignedInteger();
-        for (int i = 0, n = ctx.Count(ref r, (long)font_keys_count, 3); i < n; i++)
+        PrcFontKeysSameFont[] font_keys_of_font = [];
+        int font_keys_of_font__count = ctx.Count(ref r, (long)font_keys_count, 3);
+        ctx.Charge(font_keys_of_font__count * 56L);
+        font_keys_of_font = new PrcFontKeysSameFont[Math.Min(font_keys_of_font__count, 256)];
+        for (int i = 0; i < font_keys_of_font__count; i++)
         {
-            ReadFontKeysSameFont(ref r, ctx);
+            if (i == font_keys_of_font.Length)
+            {
+                Array.Resize(ref font_keys_of_font, (int)Math.Min(font_keys_of_font.Length * 2L, font_keys_of_font__count));
+            }
+
+            font_keys_of_font[i] = ReadFontKeysSameFont(ref r, ctx);
         }
         ctx.Leave();
+        return new PrcMarkupSerializationHelper
+        {
+            DefaultFontFamilyName = default_font_family_name,
+            FontKeysOfFont = font_keys_of_font,
+        };
     }
 
     // RgbColor
@@ -994,7 +1028,7 @@ internal static partial class PrcReaders
         uint number_of_codes = r.ReadUnsignedInteger();
         uint[] code_numbers = PrcArrays.ReadUnsignedIntegers(ref r, ctx, (long)number_of_codes);
         uint number_of_text_strings = r.ReadUnsignedInteger();
-        PrcArrays.SkipStrings(ref r, (long)number_of_text_strings);
+        string[] text_strings = PrcArrays.ReadStrings(ref r, ctx, (long)number_of_text_strings);
         r.SkipString();
         r.ReadCharacter();
         ctx.Schema.Evaluate(ref r, PrcType.PRC_TYPE_TESS_Markup);
@@ -1003,6 +1037,7 @@ internal static partial class PrcReaders
         {
             TessellationCoordinates = tessellation_coordinates,
             CodeNumbers = code_numbers,
+            TextStrings = text_strings,
         };
     }
 
@@ -1143,7 +1178,7 @@ internal static partial class PrcReaders
         ctx.Enter("FileStructureInternalGlobalData", r.BitPosition);
         r.ReadDouble();
         r.ReadDouble();
-        ReadMarkupSerializationHelper(ref r, ctx);
+        PrcMarkupSerializationHelper serialize_help = ReadMarkupSerializationHelper(ref r, ctx);
         uint color_count = r.ReadUnsignedInteger();
         PrcRgbColor[] colors = [];
         int colors__count = ctx.Count(ref r, (long)color_count, 6);
@@ -1241,6 +1276,7 @@ internal static partial class PrcReaders
         ctx.Leave();
         return new PrcFileStructureInternalGlobalData
         {
+            SerializeHelp = serialize_help,
             Colors = colors,
             Pictures = pictures,
             Textures = textures,
@@ -2241,7 +2277,7 @@ internal static partial class PrcReaders
 
             representation_items[i] = ReadRiRepresentationItem(ref r, ctx);
         }
-        ReadMarkupData(ref r, ctx);
+        PrcMarkupData markups = ReadMarkupData(ref r, ctx);
         uint number_of_views = r.ReadUnsignedInteger();
         for (int i = 0, n = ctx.Count(ref r, (long)number_of_views, 37); i < n; i++)
         {
@@ -2255,6 +2291,7 @@ internal static partial class PrcReaders
         {
             Base = @base,
             RepresentationItems = representation_items,
+            Markups = markups,
         };
     }
 
@@ -2434,7 +2471,7 @@ internal static partial class PrcReaders
         uint part_count = r.ReadUnsignedInteger();
         PrcAsmPartDefinition[] parts = [];
         int parts__count = ctx.Count(ref r, (long)part_count, 26);
-        ctx.Charge(parts__count * 48L);
+        ctx.Charge(parts__count * 56L);
         parts = new PrcAsmPartDefinition[Math.Min(parts__count, 256)];
         for (int i = 0; i < parts__count; i++)
         {

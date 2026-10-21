@@ -65,7 +65,7 @@ scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped
 | Cameras | ✅ from view nodes | ❌ (a PDF carries its own views) |
 | Node animation | ✅ | — |
 | Skeletal animation and skinning | ✅ | — |
-| PMI notes and dimensions | — | ✅ as hidden nodes PDF views can show |
+| PMI notes and dimensions | — | ✅ as hidden nodes PDF views can show; text in a built-in stroke font |
 | Units (`Scene.UnitScale`) | ✅ | ✅ |
 | Acrobat 3D vendor mesh (`RHAdobeMeshResource`) | ✅ | — |
 
@@ -85,7 +85,7 @@ scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped
 - Wires and points
 - B-rep faces on blend, revolution, extrusion and offset surfaces, and the rare face whose edges do not lie on
   its surface (counted in `Scene.Diagnostics`)
-- Markup text, symbol and picture entities, leaders, and markups of parts and of PRC views
+- Markup symbol and picture entities, markups placed on the screen (billboard, fixed-size, frame-draw blocks), leaders, markups of PRC views, real fonts (text is drawn in a stroke font of the library)
 - The views and cameras stored in the PRC file itself
 - Pictures stored as raw pixels; line styles and patterns
 - Colours of single faces of uncompressed B-rep bodies (those of compressed bodies are read), and those an assembly gives single

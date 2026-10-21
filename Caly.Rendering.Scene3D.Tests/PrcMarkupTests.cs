@@ -88,6 +88,31 @@ public class PrcMarkupTests
         Assert.DoesNotContain(scene.Diagnostics, d => d.Severity != SceneDiagnosticSeverity.Info);
     }
 
+    /// <summary>
+    /// A part may have markups of its own (the Tetra4D LandingGear's notes and dimensions are all its part's): they show wherever
+    /// the part is used, as nodes under each occurrence that shows it, named with that occurrence's identifier as views name them.
+    /// </summary>
+    [Fact]
+    public void AMarkupOfAPartIsUnderEachOccurrenceThatShowsThePart()
+    {
+        PrcTestFile file = PrcTestFile.Simple();
+        file.Tessellations.Add(new PrcTestFile.MarkupTessellation().Color(Red).Polyline(0, 0, 0, 1, 0, 0).Write(0));
+        file.Parts[0] = file.Parts[0] with { Markups = [new PrcTestFile.Markup("Spec", 2)] };
+        using Scene scene = PrcReader.Read(file.Build(), cancellationToken: TestContext.Current.CancellationToken);
+
+        SceneInvariants.Check(scene);
+        int[] nodes = NodesOf(scene, "Spec.");
+        Assert.Equal(2, nodes.Length);
+        Assert.All(nodes, n =>
+        {
+            string occurrence = scene.GetName(scene.Nodes[scene.Nodes[n].Parent].Name);
+            Assert.Matches("^(left|right)\\.", occurrence);
+            Assert.EndsWith(PrcNodeNames.IdentifierOf(occurrence).ToString(), scene.GetName(scene.Nodes[n].Name));
+            Assert.False(scene.Nodes[n].Visible);
+        });
+        Assert.NotEqual(scene.Nodes[nodes[0]].Parent, scene.Nodes[nodes[1]].Parent);
+    }
+
     [Fact]
     public void ThePartsOfTheModelAreNotChangedByItsMarkups()
     {
@@ -157,9 +182,9 @@ public class PrcMarkupTests
     [Fact]
     public void WhatCannotBeDrawnIsSaidAndTheRestIsStillShown()
     {
-        // A text (entity 14) needs a font; a symbol (9) a picture.
+        // A symbol (9) needs a picture.
         using Scene scene = Read(new PrcTestFile.MarkupTessellation()
-            .Other(14, [4, 2], 0).Color(Red).Polyline(0, 0, 0, 1, 0, 0).Other(9, [0, 0, 0], 0));
+            .Color(Red).Polyline(0, 0, 0, 1, 0, 0).Other(9, [0, 0, 0], 0));
 
         Assert.Single(NodesOf(scene, "Note."));
         SceneDiagnostic said = Assert.Single(scene.Diagnostics, d => d.Code == "prc-markup-entity-not-shown");
@@ -182,6 +207,77 @@ public class PrcMarkupTests
         Assert.Equal([0f, 0, 0, 1, 0, 0], lines.Positions);
         Assert.Equal([BlueBytes, BlueBytes], lines.Colors);
         Assert.Contains(scene.Diagnostics, d => d.Code == "prc-markup-entity-not-shown");
+    }
+
+    /// <summary>
+    /// A matrix block multiplies what it holds by its matrix (16 numbers, column after column), after any matrix around it; what
+    /// follows the block is placed as before it.
+    /// </summary>
+    [Fact]
+    public void AMatrixBlockPlacesWhatItHolds()
+    {
+        double[] scaleTwoMoveTen = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 10, 0, 0, 1];
+        double[] moveUpOne = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1];
+        using Scene scene = Read(new PrcTestFile.MarkupTessellation()
+            .Color(Red)
+            .Matrix(scaleTwoMoveTen, inside => inside.Polyline(0, 0, 0, 1, 0, 0).Matrix(moveUpOne, deeper => deeper.Polyline(0, 0, 0, 1, 0, 0)))
+            .Polyline(5, 5, 5, 6, 5, 5));
+
+        int node = Assert.Single(NodesOf(scene, "Note."));
+        var lines = MeshOf(scene, node);
+        Assert.Equal([10f, 0, 0, 12, 0, 0, 10, 2, 0, 12, 2, 0, 5, 5, 5, 6, 5, 5], lines.Positions);
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-markup-entity-not-shown");
+    }
+
+    /// <summary>
+    /// A text is drawn as strokes in the colour that holds, filling its box: as wide as it says, and its capitals as high as it says,
+    /// on the line y = 0 of the matrix that places it (the Tetra4D LandingGear's notes).
+    /// </summary>
+    [Fact]
+    public void ATextIsDrawnAsStrokesFillingItsBox()
+    {
+        double[] place = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 100, 50, 7, 1];
+        using Scene scene = Read(new PrcTestFile.MarkupTessellation()
+            .Color(Blue).Font(1)
+            .Matrix(place, inside => inside.Text("HI", 20, 6)));
+
+        SceneInvariants.Check(scene);
+        int node = Assert.Single(NodesOf(scene, "Note."));
+        var lines = MeshOf(scene, node);
+        Assert.Equal(SceneTopology.Lines, lines.Topology);
+        Assert.All(lines.Colors, c => Assert.Equal(BlueBytes, c));
+
+        float[] x = [.. lines.Positions.Where((_, i) => i % 3 == 0)], y = [.. lines.Positions.Where((_, i) => i % 3 == 1)], z = [.. lines.Positions.Where((_, i) => i % 3 == 2)];
+        Assert.Equal(100f, x.Min(), 3);
+        Assert.InRange(x.Max(), 100f + 14, 100f + 20);
+        Assert.Equal(50f, y.Min(), 3);
+        Assert.Equal(56f, y.Max(), 3);
+        Assert.All(z, v => Assert.Equal(7f, v));
+        Assert.DoesNotContain(scene.Diagnostics, d => d.Code == "prc-markup-entity-not-shown");
+    }
+
+    /// <summary>
+    /// What a block's start says it holds is not to be trusted: a sample's frame-draw block says 69 numbers where the tessellation
+    /// has 54, all its entities take. The entities are walked, those left out too, each taking the numbers it says it takes.
+    /// </summary>
+    [Fact]
+    public void TheNumbersOfABlockAreThoseOfWhatItHolds()
+    {
+        using Scene scene = Read(new PrcTestFile.MarkupTessellation()
+            .Block(7, [1, 2, 3], inside => inside.Polyline(9, 9, 9, 8, 8, 8), claimedDoubles: 40)
+            .Color(Blue).Polyline(0, 0, 0, 1, 0, 0));
+
+        var lines = MeshOf(scene, Assert.Single(NodesOf(scene, "Note.")));
+        Assert.Equal([0f, 0, 0, 1, 0, 0], lines.Positions);
+        Assert.Equal([BlueBytes, BlueBytes], lines.Colors);
+    }
+
+    [Fact]
+    public void ATextNamingAStringThatIsNotThereIsNotDrawn()
+    {
+        using Scene scene = Read(new PrcTestFile.MarkupTessellation().Color(Red).Polyline(0, 0, 0, 1, 0, 0).Other(14, [4, 2], 5));
+        var lines = MeshOf(scene, Assert.Single(NodesOf(scene, "Note.")));
+        Assert.Equal([0f, 0, 0, 1, 0, 0], lines.Positions);
     }
 
     [Fact]

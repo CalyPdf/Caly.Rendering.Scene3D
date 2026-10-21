@@ -192,7 +192,7 @@ public class PrcReaderTests(ITestOutputHelper output)
     private static readonly (string File, int Nodes, int Meshes, int Triangles, int Materials)[] Shown =
     [
         ("Anark_-_NAVAIR", 59, 57, 88_947, 890),         // 56 markups, hidden
-        ("PROSTEP-Change_Process_201408__3DData", 1698, 337, 208_380, 235),   // 42 markups, hidden
+        ("PROSTEP-Change_Process_201408__3DData", 1747, 386, 213_965, 235),   // 91 markups (lines, and texts since they are drawn), hidden
         ("3dpdf-Auto-Engine", 1193, 596, 402_680, 17),
         ("3dpdf-Industrial-Grinder", 1999, 247, 92_680, 451),
         ("3dpdf-Industrial-Saw", 64, 18, 82_660, 14),
@@ -200,7 +200,7 @@ public class PrcReaderTests(ITestOutputHelper output)
         ("NAVAir-native-Creo", 100, 98, 87_616, 198),     // 97 markups, hidden
         // 71 markups: a node and a mesh each (of lines and triangles) and the one material they share, hidden.
         ("Native-NX-PMI", 74, 72, 48_541, 195),
-        ("Release-to-Manufacturing", 4, 2, 9_445, 3),
+        ("Release-to-Manufacturing", 110, 108, 18_257, 4),   // 106 markups of its part (lines and texts), hidden
     ];
 
     /// <summary>The payloads whose solids have exact geometry only: drawn from it (phase 5 compressed, phase B uncompressed), the scene whole.</summary>

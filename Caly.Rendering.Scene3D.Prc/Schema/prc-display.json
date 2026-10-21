@@ -52,7 +52,11 @@
 
     // Globals: what styles are made of.
     "PRC_TYPE_ASM_FileStructureGlobals": [ "global_data" ],
-    "FileStructureInternalGlobalData": [ "colors", "pictures", "textures", "materials", "styles", "ref_coords" ],
+    "FileStructureInternalGlobalData": [ "serialize_help", "colors", "pictures", "textures", "materials", "styles", "ref_coords" ],
+    // The fonts the text of markups names (ISO 14739-1, 7.3.5.2.2).
+    "MarkupSerializationHelper": [ "default_font_family_name", "font_keys_of_font" ],
+    "FontKeysSameFont": [ "font_name", "character_set", "font_key_list" ],
+    "FontKey": [ "*" ],
     "RgbColor": [ "*" ],
     "PRC_TYPE_GRAPH_Picture": [ "format", "biased_uncompressed_file_index", "pixel_width", "pixel_height" ],
     "PRC_TYPE_GRAPH_TextureDefinition": [ "biased_picture_index", "texture_mapping_type", "texture_mapping_operator", "texture_function", "texture_application_mode", "texture_transformation", "alpha_test_reference", "texture_wrapping_mode_s", "texture_wrapping_mode_t" ],
@@ -90,7 +94,7 @@
     "ReferencesOfProductOccurrence": [ "*" ],
     "FileIdentifier": [ "*" ],
     "ProductInformation": [ "*" ],
-    "PRC_TYPE_ASM_PartDefinition": [ "base", "representation_items" ],
+    "PRC_TYPE_ASM_PartDefinition": [ "base", "representation_items", "markups" ],
     "PRC_TYPE_RI_RepresentationItem": [ "data" ],
     "PRC_TYPE_RI_BrepModel": [ "item_content", "exact_geometry", "index_topological_context", "index_body" ],
     "PRC_TYPE_RI_PolyBrepModel": [ "item_content" ],
@@ -168,7 +172,7 @@
       "tessellation_coordinates", "has_faces", "has_loops", "must_calculate_normals", "crease_angle",
       "normal_coordinates", "wire_indices", "triangulated_index_array", "face_tessellation_data", "texture_coordinates"
     ],
-    "PRC_TYPE_TESS_Markup": [ "tessellation_coordinates", "code_numbers" ],
+    "PRC_TYPE_TESS_Markup": [ "tessellation_coordinates", "code_numbers", "text_strings" ],
     "PRC_TYPE_TESS_Face": [
       "line_attributes", "start_of_wire_data", "sizes_wire", "used_entities_flag", "start_triangulated", "triangulateddata",
       "number_of_textured_coordinate_indices", "vertex_color_data", "behavior"

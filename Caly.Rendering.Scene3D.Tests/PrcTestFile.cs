@@ -19,7 +19,9 @@ internal sealed class PrcTestFile
     /// A part with one item. With <paramref name="Body"/> the item is a solid (<c>PRC_TYPE_RI_BrepModel</c>) whose exact
     /// geometry is that body of that topological context; without, a mesh item (<c>PRC_TYPE_RI_PolyBrepModel</c>).
     /// </summary>
-    public sealed record Part(string Name, string ItemName, uint BiasedTessellation, uint BiasedStyle = 0, ushort Behavior = 1, (uint Context, uint Body)? Body = null);
+    /// <paramref name="Markups"/> are the part's own (a note of a part shows wherever the part is used).
+    public sealed record Part(string Name, string ItemName, uint BiasedTessellation, uint BiasedStyle = 0, ushort Behavior = 1, (uint Context, uint Body)? Body = null,
+        Markup[]? Markups = null);
 
     public uint AuthoringVersion { get; init; } = 8137;
 
@@ -309,7 +311,7 @@ internal sealed class PrcTestFile
             }
 
             UserData(w);
-            w.Unsigned(0).Unsigned(0).Unsigned(0).Unsigned(0);                                                   // markup
+            WriteMarkups(w, part.Markups ?? []);
             w.Unsigned(0);                                                                                       // views
             UserData(w);
         }
@@ -372,10 +374,11 @@ internal sealed class PrcTestFile
     /// </summary>
     public sealed class MarkupTessellation
     {
-        private const uint ExtraData = 0x04000000;
+        private const uint ExtraData = 0x04000000, IsMatrix = 0x08000000;
 
         private readonly List<uint> _codes = [];
         private readonly List<double> _coordinates = [];
+        private readonly List<string> _strings = [];
 
         /// <summary>A colour that holds until the next one; <paramref name="identifier"/> is as the file has it, three times the colour's index.</summary>
         public MarkupTessellation Color(uint identifier) => Entity(ExtraData | (11u << 21), [], identifier);
@@ -386,6 +389,48 @@ internal sealed class PrcTestFile
 
         public MarkupTessellation Quads(params double[] points) => Entity(ExtraData | (3u << 21), points);
 
+        /// <summary>The font of the texts that follow (entity 13): <paramref name="key"/> as the file has it.</summary>
+        public MarkupTessellation Font(uint key) => Entity(ExtraData | (13u << 21), [], key);
+
+        /// <summary>A text (entity 14) in a box <paramref name="width"/> wide and <paramref name="height"/> high, its string added to the tessellation's.</summary>
+        public MarkupTessellation Text(string text, double width, double height)
+        {
+            _strings.Add(text);
+            return Entity(ExtraData | (14u << 21), [width, height], (uint)(_strings.Count - 1));
+        }
+
+        /// <summary>
+        /// A matrix block: <paramref name="matrix"/> (16 numbers, column after column, as the file stores them) multiplies what
+        /// it holds. The strings of what it holds are added to the tessellation's.
+        /// </summary>
+        public MarkupTessellation Matrix(double[] matrix, Action<MarkupTessellation> inside)
+        {
+            var content = new MarkupTessellation();
+            inside(content);
+            int firstString = _strings.Count;
+            _strings.AddRange(content._strings);
+            _codes.Add(IsMatrix | (uint)(content._codes.Count / 2));
+            _codes.Add((uint)(matrix.Length + content._coordinates.Count));
+            _coordinates.AddRange(matrix);
+            _coordinates.AddRange(content._coordinates);
+            for (int i = 0; i < content._codes.Count; i++)
+            {
+                uint code = content._codes[i];
+                _codes.Add(code);
+
+                // A text inside names its string by its number in the whole tessellation.
+                if ((code & 0x7E00000) == (ExtraData | (14u << 21)) && (code & 0xFFFFF) == 1)
+                {
+                    _codes.Add(content._codes[++i]);
+                    _codes.Add((uint)firstString + content._codes[++i]);
+                }
+            }
+
+            _codes.Add(IsMatrix);
+            _codes.Add(0);
+            return this;
+        }
+
         /// <summary>An entity of another kind (<paramref name="type"/> as in the table of the standard), with its inner codes and doubles.</summary>
         public MarkupTessellation Other(uint type, double[] doubles, params uint[] inner) => Entity(ExtraData | (type << 21), doubles, inner);
 
@@ -393,13 +438,15 @@ internal sealed class PrcTestFile
         /// A block of entities (a face-view, frame-draw or fixed-size mode: <paramref name="type"/> 6, 7 or 8):
         /// its start, which has the number of entities inside and the doubles of the block, the entities, and its end.
         /// </summary>
-        public MarkupTessellation Block(uint type, double[] origin, Action<MarkupTessellation> inside)
+        /// <paramref name="claimedDoubles"/>, when given, is what the start says the block holds instead of what it does (a writer
+        /// of the samples counts more than there is).
+        public MarkupTessellation Block(uint type, double[] origin, Action<MarkupTessellation> inside, int? claimedDoubles = null)
         {
             var content = new MarkupTessellation();
             inside(content);
             uint start = ExtraData | (type << 21);
             _codes.Add(start | (uint)(content._codes.Count / 2));
-            _codes.Add((uint)(origin.Length + content._coordinates.Count));
+            _codes.Add((uint)(claimedDoubles ?? (origin.Length + content._coordinates.Count)));
             _coordinates.AddRange(origin);
             _coordinates.AddRange(content._coordinates);
             _codes.AddRange(content._codes);
@@ -437,7 +484,12 @@ internal sealed class PrcTestFile
                 w.Unsigned(code);
             }
 
-            w.Unsigned(0);                                                                                       // no text strings
+            w.Unsigned((uint)_strings.Count);
+            foreach (string text in _strings)
+            {
+                w.String(text);
+            }
+
             return w.String("label").Bits(0, 8);                                                                 // label, behaviour
         }
     }
