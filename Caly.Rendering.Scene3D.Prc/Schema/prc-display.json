@@ -75,7 +75,15 @@
     // The tree: occurrences, parts, and the items of a part that can have a mesh.
     "PRC_TYPE_ASM_FileStructureTree": [ "parts", "products", "internal_data" ],
     "PRC_TYPE_ASM_FileStructure": [ "index_product_occurrence" ],
-    "PRC_TYPE_ASM_ProductOccurrence": [ "base", "references_product_occurrence", "product_behavior", "product_information", "location", "markups" ],
+    "PRC_TYPE_ASM_ProductOccurrence": [ "base", "references_product_occurrence", "product_behavior", "product_information", "location", "entity_reference", "markups" ],
+    // What an occurrence changes of entities under it (ISO 14739-1: "modifiers towards their nominal definition, which may include
+    // location, color, and visibility"): assemblies colour the items of their parts that way.
+    "PRC_TYPE_MISC_EntityReference": [ "content_entity_reference" ],
+    "ContentEntityReference": [ "base", "index_of_local_coordinate_system", "flag", "reference_data" ],
+    "ReferenceData": [ "data" ],
+    "PRC_TYPE_MISC_ReferenceOnPRCBase": [ "type_of_entity", "flag", "different_unique_id", "unique_id" ],
+    "PRC_TYPE_MISC_ReferenceOnTopology": [ "type_of_entity", "flag", "data" ],
+    "AdditionalTargetData": [ "*" ],
     // The markups of an occurrence (notes, dimensions): the entities each draws with are tessellations of their own kind.
     "MarkupData": [ "markups" ],
     "PRC_TYPE_MKP_Markup": [ "base", "biased_index_tessellation" ],

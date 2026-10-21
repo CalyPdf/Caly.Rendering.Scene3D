@@ -529,6 +529,83 @@ internal sealed class PrcRiRepresentationItem
     public required uint DataType;
 }
 
+/// <summary>What is kept of <c>AdditionalTargetData</c>.</summary>
+internal sealed class PrcAdditionalTargetData
+{
+    /// <summary><c>flag</c>.</summary>
+    public required bool Flag;
+
+    /// <summary><c>unique_id</c>. Default when the file does not have it.</summary>
+    public required PrcUniqueId UniqueId;
+
+    /// <summary><c>index_of_topological_index</c>.</summary>
+    public required uint IndexOfTopologicalIndex;
+
+    /// <summary><c>index_of_body</c>.</summary>
+    public required uint IndexOfBody;
+
+    /// <summary><c>number_of_indices</c>.</summary>
+    public required uint NumberOfIndices;
+
+    /// <summary><c>indices</c>.</summary>
+    public required uint[] Indices;
+}
+
+/// <summary>What is kept of <c>PRC_TYPE_MISC_ReferenceOnTopology</c>.</summary>
+internal sealed class PrcMiscReferenceOnTopology
+{
+    /// <summary><c>type_of_entity</c>.</summary>
+    public required uint TypeOfEntity;
+
+    /// <summary><c>flag</c>.</summary>
+    public required bool Flag;
+
+    /// <summary><c>data</c>. Default when the file does not have it.</summary>
+    public required PrcAdditionalTargetData? Data;
+}
+
+/// <summary>What is kept of <c>PRC_TYPE_MISC_ReferenceOnPRCBase</c>.</summary>
+internal sealed class PrcMiscReferenceOnPRCBase
+{
+    /// <summary><c>type_of_entity</c>.</summary>
+    public required uint TypeOfEntity;
+
+    /// <summary><c>flag</c>.</summary>
+    public required bool Flag;
+
+    /// <summary><c>different_unique_id</c>. Default when the file does not have it.</summary>
+    public required PrcUniqueId DifferentUniqueId;
+
+    /// <summary><c>unique_id</c>.</summary>
+    public required uint UniqueId;
+}
+
+/// <summary>What is kept of <c>ReferenceData</c>.</summary>
+internal sealed class PrcReferenceData
+{
+    /// <summary><c>data</c>: one of <see cref="PrcMiscReferenceOnTopology"/>, <see cref="PrcMiscReferenceOnPRCBase"/>, by <see cref="DataType"/>; null for a kind nothing is kept of.</summary>
+    public required object? Data;
+
+    /// <summary>The entity type of <see cref="Data"/>.</summary>
+    public required uint DataType;
+}
+
+/// <summary>What is kept of <c>ContentEntityReference</c>.</summary>
+internal sealed class PrcContentEntityReference
+{
+    /// <summary><c>base</c>.</summary>
+    public required PrcRootPRCBaseWithGraphics Base;
+
+    /// <summary><c>index_of_local_coordinate_system</c>.</summary>
+    public required uint IndexOfLocalCoordinateSystem;
+
+    /// <summary><c>flag</c>.</summary>
+    public required bool Flag;
+
+    /// <summary><c>reference_data</c>. Default when the file does not have it.</summary>
+    public required PrcReferenceData? ReferenceData;
+}
+
 /// <summary>What is kept of <c>PRC_TYPE_MKP_Markup</c>.</summary>
 internal sealed class PrcMkpMarkup
 {
@@ -573,6 +650,13 @@ internal sealed class PrcSurfPlane
 
     /// <summary><c>v_parameter_coeff_b</c>.</summary>
     public required double VParameterCoeffB;
+}
+
+/// <summary>What is kept of <c>PRC_TYPE_MISC_EntityReference</c>.</summary>
+internal sealed class PrcMiscEntityReference
+{
+    /// <summary><c>content_entity_reference</c>.</summary>
+    public required PrcContentEntityReference ContentEntityReference;
 }
 
 /// <summary>What is kept of <c>PRC_TYPE_ASM_PartDefinition</c>.</summary>
@@ -656,6 +740,9 @@ internal sealed class PrcAsmProductOccurrence
 
     /// <summary>The entity type of <see cref="Location"/>.</summary>
     public required uint LocationType;
+
+    /// <summary><c>entity_reference</c>.</summary>
+    public required PrcMiscEntityReference[] EntityReference;
 
     /// <summary><c>markups</c>.</summary>
     public required PrcMarkupData Markups;

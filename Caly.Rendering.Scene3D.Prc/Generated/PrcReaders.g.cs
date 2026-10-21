@@ -1562,87 +1562,126 @@ internal static partial class PrcReaders
     }
 
     // AdditionalTargetData
-    internal static void ReadAdditionalTargetData(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcAdditionalTargetData ReadAdditionalTargetData(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("AdditionalTargetData", r.BitPosition);
         bool flag = r.ReadBoolean();
+        PrcUniqueId unique_id = default;
         if (!flag)
         {
-            ReadUniqueId(ref r, ctx);
+            unique_id = ReadUniqueId(ref r, ctx);
         }
-        r.ReadUnsignedInteger();
-        r.ReadUnsignedInteger();
+        uint index_of_topological_index = r.ReadUnsignedInteger();
+        uint index_of_body = r.ReadUnsignedInteger();
         uint number_of_indices = r.ReadUnsignedInteger();
-        PrcArrays.SkipUnsignedIntegers(ref r, (long)number_of_indices);
+        uint[] indices = PrcArrays.ReadUnsignedIntegers(ref r, ctx, (long)number_of_indices);
         ctx.Leave();
+        return new PrcAdditionalTargetData
+        {
+            Flag = flag,
+            UniqueId = unique_id,
+            IndexOfTopologicalIndex = index_of_topological_index,
+            IndexOfBody = index_of_body,
+            NumberOfIndices = number_of_indices,
+            Indices = indices,
+        };
     }
 
     // PRC_TYPE_MISC_ReferenceOnTopology
-    internal static void ReadMiscReferenceOnTopology(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcMiscReferenceOnTopology ReadMiscReferenceOnTopology(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("PRC_TYPE_MISC_ReferenceOnTopology", r.BitPosition);
         uint id = r.ReadUnsignedInteger();
         ctx.Expect(id, PrcType.PRC_TYPE_MISC_ReferenceOnTopology, "PRC_TYPE_MISC_ReferenceOnTopology");
-        r.ReadUnsignedInteger();
+        uint type_of_entity = r.ReadUnsignedInteger();
         bool flag = r.ReadBoolean();
+        PrcAdditionalTargetData? data = null;
         if (flag)
         {
-            ReadAdditionalTargetData(ref r, ctx);
+            data = ReadAdditionalTargetData(ref r, ctx);
         }
         ctx.Schema.Evaluate(ref r, PrcType.PRC_TYPE_MISC_ReferenceOnTopology);
         ctx.Leave();
+        return new PrcMiscReferenceOnTopology
+        {
+            TypeOfEntity = type_of_entity,
+            Flag = flag,
+            Data = data,
+        };
     }
 
     // PRC_TYPE_MISC_ReferenceOnPRCBase
-    internal static void ReadMiscReferenceOnPRCBase(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcMiscReferenceOnPRCBase ReadMiscReferenceOnPRCBase(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("PRC_TYPE_MISC_ReferenceOnPRCBase", r.BitPosition);
         uint id = r.ReadUnsignedInteger();
         ctx.Expect(id, PrcType.PRC_TYPE_MISC_ReferenceOnPRCBase, "PRC_TYPE_MISC_ReferenceOnPRCBase");
-        r.ReadUnsignedInteger();
+        uint type_of_entity = r.ReadUnsignedInteger();
         bool flag = r.ReadBoolean();
+        PrcUniqueId different_unique_id = default;
         if (!flag)
         {
-            ReadUniqueId(ref r, ctx);
+            different_unique_id = ReadUniqueId(ref r, ctx);
         }
-        r.ReadUnsignedInteger();
+        uint unique_id = r.ReadUnsignedInteger();
         ctx.Schema.Evaluate(ref r, PrcType.PRC_TYPE_MISC_ReferenceOnPRCBase);
         ctx.Leave();
+        return new PrcMiscReferenceOnPRCBase
+        {
+            TypeOfEntity = type_of_entity,
+            Flag = flag,
+            DifferentUniqueId = different_unique_id,
+            UniqueId = unique_id,
+        };
     }
 
     // ReferenceData
-    internal static void ReadReferenceData(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcReferenceData ReadReferenceData(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("ReferenceData", r.BitPosition);
         uint data__type = 0;
+        object? data = null;
         data__type = PrcContext.PeekUnsignedInteger(ref r);
         switch (data__type)
         {
             case PrcType.PRC_TYPE_MISC_ReferenceOnTopology:
-                ReadMiscReferenceOnTopology(ref r, ctx);
+                data = ReadMiscReferenceOnTopology(ref r, ctx);
                 break;
             case PrcType.PRC_TYPE_MISC_ReferenceOnPRCBase:
-                ReadMiscReferenceOnPRCBase(ref r, ctx);
+                data = ReadMiscReferenceOnPRCBase(ref r, ctx);
                 break;
             default:
                 ctx.UnknownType(ref r, "ReferenceData.data", data__type);
                 break;
         }
         ctx.Leave();
+        return new PrcReferenceData
+        {
+            Data = data,
+            DataType = data__type,
+        };
     }
 
     // ContentEntityReference
-    internal static void ReadContentEntityReference(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcContentEntityReference ReadContentEntityReference(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("ContentEntityReference", r.BitPosition);
-        ReadRootPRCBaseWithGraphics(ref r, ctx);
-        r.ReadUnsignedInteger();
+        PrcRootPRCBaseWithGraphics @base = ReadRootPRCBaseWithGraphics(ref r, ctx);
+        uint index_of_local_coordinate_system = r.ReadUnsignedInteger();
         bool flag = r.ReadBoolean();
+        PrcReferenceData? reference_data = null;
         if (flag)
         {
-            ReadReferenceData(ref r, ctx);
+            reference_data = ReadReferenceData(ref r, ctx);
         }
         ctx.Leave();
+        return new PrcContentEntityReference
+        {
+            Base = @base,
+            IndexOfLocalCoordinateSystem = index_of_local_coordinate_system,
+            Flag = flag,
+            ReferenceData = reference_data,
+        };
     }
 
     // ContentExtendedEntityReference
@@ -2075,16 +2114,20 @@ internal static partial class PrcReaders
     }
 
     // PRC_TYPE_MISC_EntityReference
-    internal static void ReadMiscEntityReference(ref PrcBitReader r, PrcContext ctx)
+    internal static PrcMiscEntityReference ReadMiscEntityReference(ref PrcBitReader r, PrcContext ctx)
     {
         ctx.Enter("PRC_TYPE_MISC_EntityReference", r.BitPosition);
         uint id = r.ReadUnsignedInteger();
         ctx.Expect(id, PrcType.PRC_TYPE_MISC_EntityReference, "PRC_TYPE_MISC_EntityReference");
-        ReadContentEntityReference(ref r, ctx);
+        PrcContentEntityReference content_entity_reference = ReadContentEntityReference(ref r, ctx);
         ctx.Schema.Evaluate(ref r, PrcType.PRC_TYPE_MISC_EntityReference);
         ctx.Mark("UserData", r.BitPosition);
         r.SkipUserData();
         ctx.Leave();
+        return new PrcMiscEntityReference
+        {
+            ContentEntityReference = content_entity_reference,
+        };
     }
 
     // ContentEntityFilterItems
@@ -2313,9 +2356,18 @@ internal static partial class PrcReaders
             }
         }
         uint entity_ref_count = r.ReadUnsignedInteger();
-        for (int i = 0, n = ctx.Count(ref r, (long)entity_ref_count, 10); i < n; i++)
+        PrcMiscEntityReference[] entity_reference = [];
+        int entity_reference__count = ctx.Count(ref r, (long)entity_ref_count, 10);
+        ctx.Charge(entity_reference__count * 40L);
+        entity_reference = new PrcMiscEntityReference[Math.Min(entity_reference__count, 256)];
+        for (int i = 0; i < entity_reference__count; i++)
         {
-            ReadMiscEntityReference(ref r, ctx);
+            if (i == entity_reference.Length)
+            {
+                Array.Resize(ref entity_reference, (int)Math.Min(entity_reference.Length * 2L, entity_reference__count));
+            }
+
+            entity_reference[i] = ReadMiscEntityReference(ref r, ctx);
         }
         PrcMarkupData markups = ReadMarkupData(ref r, ctx);
         uint number_of_views = r.ReadUnsignedInteger();
@@ -2350,6 +2402,7 @@ internal static partial class PrcReaders
             ProductInformation = product_information,
             Location = location,
             LocationType = location__type,
+            EntityReference = entity_reference,
             Markups = markups,
         };
     }
@@ -2395,7 +2448,7 @@ internal static partial class PrcReaders
         uint product_count = r.ReadUnsignedInteger();
         PrcAsmProductOccurrence[] products = [];
         int products__count = ctx.Count(ref r, (long)product_count, 42);
-        ctx.Charge(products__count * 80L);
+        ctx.Charge(products__count * 88L);
         products = new PrcAsmProductOccurrence[Math.Min(products__count, 256)];
         for (int i = 0; i < products__count; i++)
         {

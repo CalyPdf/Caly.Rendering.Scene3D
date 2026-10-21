@@ -50,6 +50,9 @@ internal sealed class PrcSceneBuilder
     private readonly int _emptyName;
     private int _markupMaterial = -1;
 
+    // What the occurrences on the way down say of entities under them, by the entity's file structure, type and unique identifier.
+    private readonly Dictionary<(int Structure, uint Type, uint UniqueId), EntityOverride> _overrides = [];
+
     private PrcSceneBuilder(PrcFile file, SceneBuilder builder, CancellationToken cancellation)
     {
         _file = file;
@@ -82,6 +85,9 @@ internal sealed class PrcSceneBuilder
     private readonly record struct MaterialKey(int ColorStructure, uint ColorStyle, int TransparencyStructure, uint TransparencyStyle, bool VertexColors);
 
     private readonly record struct OccurrenceId(int Structure, int Index);
+
+    /// <summary>The graphics an occurrence gives an entity under it: a style of the occurrence's file structure, and behaviour bits.</summary>
+    private readonly record struct EntityOverride(int StyleStructure, uint Style, int Behavior);
 
     /// <summary>A tessellation as one of the meshes made of it: <paramref name="Hidden"/> says which of its material slots are left out ("" for none).</summary>
     private readonly record struct MeshKey(int Structure, int Tessellation, string Hidden);
@@ -183,6 +189,7 @@ internal sealed class PrcSceneBuilder
         }
 
         Apply(ref appearance, id.Structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField, show: true);
+        List<(int, uint, uint)>? overridden = AddOverrides(occurrence, id.Structure, null);
 
         // What the occurrence shows: its own part and sons, else those of its prototype (or of its
         // external data), through as many prototypes as it takes. The occurrences on that way add
@@ -215,6 +222,7 @@ internal sealed class PrcSceneBuilder
                 }
 
                 Apply(ref appearance, current.Structure, g.BiasedIndexOfLineStyle, g.BehaviorBitField, show: true);
+                overridden = AddOverrides(o, current.Structure, overridden);
                 if (name.Length == 0)
                 {
                     name = o.Base.Base.Base.EntityName.Name;
@@ -345,6 +353,57 @@ internal sealed class PrcSceneBuilder
 
             bool IsDefault(uint index) => ((byte)Occurrence(new OccurrenceId(sons.Structure, (int)index)).ProductInformation.ProductInformationFlags & FlagDefault) != 0;
         }
+
+        // What it said of the entities under it holds below it only (an exception ends the whole build).
+        foreach ((int, uint, uint) key in overridden ?? [])
+        {
+            _overrides.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Takes what an occurrence says of entities under it (its <c>entity_reference</c>: ISO 14739-1, "modifiers towards their nominal
+    /// definition, which may include location, color, and visibility") for the occurrences and items below it. Assemblies colour the
+    /// items of their parts that way, and cut them away (the Tetra4D Turbine: its blades, bearings and hoses are coloured, and half its
+    /// cover and most of its housing removed, by the assembly only). Of two occurrences that say something of the same entity the outer
+    /// one wins: the assembly has the last word over its subassemblies. Returns the keys it added, for the caller to take back.
+    /// </summary>
+    private List<(int, uint, uint)>? AddOverrides(PrcAsmProductOccurrence occurrence, int structure, List<(int, uint, uint)>? added)
+    {
+        foreach (PrcMiscEntityReference reference in occurrence.EntityReference)
+        {
+            PrcContentEntityReference content = reference.ContentEntityReference;
+            PrcGraphicsContent graphics = content.Base.GraphicsContent;
+            switch (content.ReferenceData?.Data)
+            {
+                case PrcMiscReferenceOnTopology:
+                    Note("prc-face-reference-not-applied", "What the PRC assembly says of single faces of its parts (their colours) is not applied.");
+                    break;
+
+                case PrcMiscReferenceOnPRCBase target:
+                    if (content.IndexOfLocalCoordinateSystem != 0)
+                    {
+                        Note("prc-reference-placement-not-applied", "Parts the PRC assembly moves from where they are defined are shown where they are defined.");
+                    }
+
+                    if (graphics.BiasedIndexOfLineStyle == 0 && (graphics.BehaviorBitField & Removed) == 0)
+                    {
+                        break;
+                    }
+
+                    int targetStructure = target.Flag ? structure : FindStructure(target.DifferentUniqueId);
+                    var key = (targetStructure, target.TypeOfEntity, target.UniqueId);
+                    if (targetStructure >= 0 && _overrides.TryAdd(key, new EntityOverride(structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField)))
+                    {
+                        added ??= [];
+                        added.Add(key);
+                    }
+
+                    break;
+            }
+        }
+
+        return added;
     }
 
     /// <summary>
@@ -490,6 +549,22 @@ internal sealed class PrcSceneBuilder
         }
 
         Apply(ref appearance, structure, graphics.BiasedIndexOfLineStyle, graphics.BehaviorBitField, show: true);
+        if (_overrides.Count != 0 && _overrides.TryGetValue((structure, type, content.Base.Base.UniqueId), out EntityOverride over))
+        {
+            if ((over.Behavior & Removed) != 0)
+            {
+                return;
+            }
+
+            // An occurrence's style is applied over the item's own, and then holds for the item's faces and members: the assembly's
+            // appearance of a part overrides the part's (the Turbine's parts give every face their own grey).
+            bool colour = HasColor(over.StyleStructure, over.Style) && (!appearance.ColorForced || (over.Behavior & SonHeritColor) != 0);
+            bool transparency = HasTransparency(over.StyleStructure, over.Style) && (!appearance.TransparencyForced || (over.Behavior & SonHeritTransparency) != 0);
+            Apply(ref appearance, over.StyleStructure, over.Style, over.Behavior, show: false);
+            appearance.ColorForced |= colour;
+            appearance.TransparencyForced |= transparency;
+        }
+
         PrcFileStructureData data = _file.FileStructures[structure];
 
         Matrix4x4 local = Matrix4x4.Identity;
@@ -803,7 +878,7 @@ internal sealed class PrcSceneBuilder
     {
         if (style != 0)
         {
-            if (!appearance.ColorForced || (behavior & SonHeritColor) != 0)
+            if (HasColor(structure, style) && (!appearance.ColorForced || (behavior & SonHeritColor) != 0))
             {
                 appearance.ColorStructure = structure;
                 appearance.ColorStyle = style;
@@ -823,6 +898,16 @@ internal sealed class PrcSceneBuilder
             appearance.Shown = (behavior & Show) != 0;
             appearance.ShowForced = (behavior & (FatherHeritShow | SonHeritShow)) == FatherHeritShow;
         }
+    }
+
+    /// <summary>
+    /// Whether a style gives a colour or a material: one that names neither says only how transparent it is, and leaves the colour to
+    /// the fathers. A style that is not there counts as one (it is reported when the material is made).
+    /// </summary>
+    private bool HasColor(int structure, uint style)
+    {
+        PrcGraphStyle[] styles = _file.FileStructures[structure].Globals.Styles;
+        return style - 1 >= (uint)styles.Length || styles[style - 1].BiasedColorIndex != 0;
     }
 
     private bool HasTransparency(int structure, uint style)

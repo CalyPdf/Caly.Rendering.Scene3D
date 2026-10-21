@@ -136,6 +136,40 @@ public class PrcBrepCorpusTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// The Turbine's parts are all grey: its colours (copper casing and gears, red flanges, dark frame, as the page's own picture
+    /// shows them) and its cutaway (half the cover, 806 of the housing's 808 bodies) are what its assembly says of the items of its
+    /// parts (entity references of its occurrences). Before they were read the engine was drawn whole, grey under a pale green cover.
+    /// </summary>
+    [Fact]
+    public void TheTurbineHasTheColoursAndTheCutawayItsAssemblyGives()
+    {
+        string? path = PrcContainerTests.CorpusFiles().FirstOrDefault(f => f.Contains("Aero-Turbine-V03042024_105", StringComparison.Ordinal));
+        if (path is null)
+        {
+            return;
+        }
+
+        using Scene scene = PrcReader.Read(File.ReadAllBytes(path), cancellationToken: TestContext.Current.CancellationToken);
+
+        SceneNode[] meshes = [.. scene.Nodes.ToArray().Where(n => n.Mesh >= 0)];
+        var colours = new HashSet<(int, int, int)>();
+        foreach (SceneNode node in meshes)
+        {
+            for (int b = 0; b < node.BindingCount; b++)
+            {
+                System.Numerics.Vector3 d = scene.Materials[scene.Bindings[node.FirstBinding + b]].Diffuse;
+                colours.Add(((int)Math.Round(d.X * 255), (int)Math.Round(d.Y * 255), (int)Math.Round(d.Z * 255)));
+            }
+        }
+
+        Assert.Equal(914 - 806 - 1, meshes.Length);                 // the housing's removed bodies and the cover's removed half
+        Assert.Contains((255, 173, 91), colours);                   // copper
+        Assert.Contains((255, 83, 83), colours);                    // red
+        Assert.Contains((106, 106, 106), colours);                  // dark grey
+        Assert.DoesNotContain((243, 254, 177), colours);            // the cover's own pale green, which the assembly replaces
+    }
+
+    /// <summary>
     /// A spline surface that closes in u has its last row of control points on its first. The first column is stored as steps and
     /// closes by itself; the rest are corrections to a prediction, and close only if they are read right: types 1 and 2 in the local
     /// frame of the two steps before, type 3 in plain coordinates. Read so, every closed net of the corpus closes to within two

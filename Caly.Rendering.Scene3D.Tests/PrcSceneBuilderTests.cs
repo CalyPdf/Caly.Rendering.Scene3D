@@ -28,7 +28,8 @@ public class PrcSceneBuilderTests
     };
 
     private static PrcAsmProductOccurrence Occurrence(string name, uint part = 0, uint[]? sons = null, uint prototype = 0, PrcUniqueId? prototypeIn = null,
-        object? location = null, uint style = 0, ushort behavior = Shown, byte flags = 0, byte productBehavior = 0, double unit = 1, bool unitFromCad = true) => new()
+        object? location = null, uint style = 0, ushort behavior = Shown, byte flags = 0, byte productBehavior = 0, double unit = 1, bool unitFromCad = true,
+        PrcMiscEntityReference[]? references = null) => new()
     {
         Base = Base(name, style, behavior),
         ReferencesProductOccurrence = new PrcReferencesOfProductOccurrence
@@ -45,6 +46,7 @@ public class PrcSceneBuilderTests
         ProductInformation = new PrcProductInformation { UnitFromCadFile = unitFromCad, Unit = unit, ProductInformationFlags = (sbyte)flags, ProductLoadStatus = 3 },
         Location = location,
         LocationType = 0,
+        EntityReference = references ?? [],
         Markups = new PrcMarkupData { Markups = [] },
     };
 
@@ -630,6 +632,21 @@ public class PrcSceneBuilderTests
     }
 
     /// <summary>
+    /// A style that names no colour and gives a transparency changes the transparency only: the colour stays what the fathers gave
+    /// (the iPhone sample's assembly makes its phone see-through that way; read as a colour it turned the phone the default grey).
+    /// </summary>
+    [Fact]
+    public void AStyleWithoutAColourLeavesTheColourAlone()
+    {
+        PrcGraphStyle[] styles = [Colour(7), Colour(0, 38)];
+        using Scene scene = Build(File(Structure([Occurrence("o", part: 1, style: 1)], [Part("p", Solid("glass", 1, style: 2))], styles: styles)));
+
+        SceneMaterial glass = MaterialOf(scene, "glass");
+        Assert.Equal(Blue, glass.Diffuse);
+        Assert.Equal(38 / 255f, glass.Opacity, 5);
+    }
+
+    /// <summary>
     /// Whether something is shown follows the same rule: the nearest entity says, unless a father's
     /// "hidden" is inherited.
     /// </summary>
@@ -646,6 +663,106 @@ public class PrcSceneBuilderTests
             [Part("p1", Solid("body", 1)), Part("p2", Solid("ghost", 1, behavior: 0))])));
 
         Assert.Equal("-1>root 0>shown 1>body#0 0>hidden item 3>ghost#0(hidden) 0>hidden branch 5>body#0(hidden) 0>hidden, sons decide 7>body#0", Tree(scene));
+    }
+
+    /// <summary>
+    /// What an occurrence says of an entity under it (PRC_TYPE_MISC_EntityReference: "modifiers towards their nominal definition, which may
+    /// include location, color, and visibility"): a style of the occurrence's own file structure, or that the entity is removed, for that
+    /// use of the part only. Assemblies colour and cut away the items of their parts that way (the Tetra4D Turbine).
+    /// </summary>
+    private static PrcMiscEntityReference Reference(PrcRiRepresentationItem item, uint style = 0, ushort behavior = Shown, PrcUniqueId? inStructure = null,
+        uint coordinateSystem = 0) => new()
+    {
+        ContentEntityReference = new PrcContentEntityReference
+        {
+            Base = Base("", style, behavior),
+            IndexOfLocalCoordinateSystem = coordinateSystem,
+            Flag = true,
+            ReferenceData = new PrcReferenceData
+            {
+                DataType = PrcType.PRC_TYPE_MISC_ReferenceOnPRCBase,
+                Data = new PrcMiscReferenceOnPRCBase
+                {
+                    TypeOfEntity = item.DataType,
+                    Flag = inStructure is null,
+                    DifferentUniqueId = inStructure ?? default,
+                    UniqueId = ((PrcRiPolyBrepModel)item.Data!).ItemContent.Base.Base.UniqueId,
+                },
+            },
+        },
+    };
+
+    [Fact]
+    public void AnOccurrenceRecoloursOrRemovesTheItemsOfItsPart()
+    {
+        // The parts' file structure: style 1 is red there, and the blade's face says red too.
+        PrcRiRepresentationItem blade = Solid("blade", 1), halfA = Solid("half A", 1), halfB = Solid("half B", 1);
+        PrcFileStructureData parts = Structure(
+            [Occurrence("blade definition", part: 1), Occurrence("cover definition", part: 2)],
+            [Part("blade part", blade), Part("cover part", halfA, halfB)], [Mesh((1, Shown))], id: 50);
+
+        // The assembly's own styles: 1 is green, 2 is yellow.
+        PrcGraphStyle[] assemblyStyles = [Colour(4), Colour(10)];
+        PrcFileStructureData assembly = Structure(
+            [
+                Occurrence("blade 1", prototype: 1, prototypeIn: Id(50), references: [Reference(blade, style: 1, behavior: Shown | SonHeritColor, inStructure: Id(50))]),
+                Occurrence("blade 2", prototype: 1, prototypeIn: Id(50)),
+                Occurrence("cover", prototype: 2, prototypeIn: Id(50), references: [Reference(halfA, behavior: FatherHeritShow | Removed, inStructure: Id(50))]),
+                Occurrence("engine", sons: [0, 1, 2]),
+            ],
+            id: 60, styles: assemblyStyles);
+
+        using Scene scene = Build(File(parts, assembly));
+
+        // The removed half is gone from that use of the cover only.
+        Assert.Equal("-1>engine 0>blade 1 1>blade#0 0>blade 2 3>blade#0 0>cover 5>half B#0", Tree(scene));
+
+        // The recoloured blade takes the assembly's green on the item and over its own face's red; the other blade keeps its red face.
+        SceneNode[] nodes = scene.Nodes.ToArray();
+        Assert.All(Enumerable.Range(0, nodes[2].BindingCount), slot => Assert.Equal(Green, scene.Materials[scene.Bindings[nodes[2].FirstBinding + slot]].Diffuse));
+        Assert.Equal(Red, scene.Materials[scene.Bindings[nodes[4].FirstBinding + 1]].Diffuse);
+
+        // Of two occurrences that say something of the same item, the outer one (the assembly) has the last word.
+        PrcFileStructureData outer = Structure(
+            [
+                Occurrence("blade 1", prototype: 1, prototypeIn: Id(50), references: [Reference(blade, style: 1, inStructure: Id(50))]),
+                Occurrence("engine", sons: [0], references: [Reference(blade, style: 2, inStructure: Id(50))]),
+            ],
+            id: 60, styles: assemblyStyles);
+        using Scene overridden = Build(File(parts, outer));
+        Assert.Equal(Yellow, MaterialOf(overridden, "blade", 0).Diffuse);
+    }
+
+    [Fact]
+    public void WhatAnOccurrenceSaysOfFacesOrPlacesIsReportedNotApplied()
+    {
+        PrcRiRepresentationItem body = Solid("body", 1);
+        var face = new PrcMiscEntityReference
+        {
+            ContentEntityReference = new PrcContentEntityReference
+            {
+                Base = Base("", 1),
+                IndexOfLocalCoordinateSystem = 0,
+                Flag = true,
+                ReferenceData = new PrcReferenceData
+                {
+                    DataType = PrcType.PRC_TYPE_MISC_ReferenceOnTopology,
+                    Data = new PrcMiscReferenceOnTopology
+                    {
+                        TypeOfEntity = PrcType.PRC_TYPE_TOPO_Face,
+                        Flag = true,
+                        Data = new PrcAdditionalTargetData { Flag = true, UniqueId = default, IndexOfTopologicalIndex = 0, IndexOfBody = 0, NumberOfIndices = 1, Indices = [0] },
+                    },
+                },
+            },
+        };
+
+        using Scene scene = Build(File(Structure([Occurrence("root", part: 1, references: [face, Reference(body, style: 2, coordinateSystem: 1)])], [Part("p", body)])));
+        Assert.Contains(scene.Diagnostics, d => d.Code == "prc-face-reference-not-applied");
+        Assert.Contains(scene.Diagnostics, d => d.Code == "prc-reference-placement-not-applied");
+
+        // The colour of a reference that also moves its item is still applied.
+        Assert.Equal(Green, MaterialOf(scene, "body", 0).Diffuse);
     }
 
     [Fact]
