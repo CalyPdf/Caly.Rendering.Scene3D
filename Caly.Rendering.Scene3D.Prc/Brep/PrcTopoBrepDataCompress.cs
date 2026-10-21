@@ -150,6 +150,13 @@ internal sealed class PrcTopoBrepDataCompress
     public required PrcBrepFace[] Faces { get; init; }
 
     /// <summary>
+    /// The numbers of the faces (into <see cref="Faces"/>) in the order of their shells: the file stores the iso faces of a shell
+    /// first, then says which kind each place of the shell holds. Null when the order is not known (an uncompressed body, whose
+    /// faces are kept in their own order, or flags that do not agree with the faces).
+    /// </summary>
+    public int[]? FacesInShellOrder { get; init; }
+
+    /// <summary>
     /// The numbers a face stores of its surface, by kind: plane (iso or ana) — normal x, normal y, 1 when z is positive else 0;
     /// iso torus — 1 when its first circle is the major one; iso NURBS — the three booleans of the sense array; ana cylinder —
     /// a point on the axis, the axis direction (6); ana torus — centre, x axis, y axis (9); ana sphere — centre (3); ana cone —

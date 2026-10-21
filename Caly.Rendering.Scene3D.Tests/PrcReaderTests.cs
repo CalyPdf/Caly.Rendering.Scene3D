@@ -196,7 +196,7 @@ public class PrcReaderTests(ITestOutputHelper output)
         ("3dpdf-Auto-Engine", 1193, 596, 402_680, 17),
         ("3dpdf-Industrial-Grinder", 1999, 247, 92_680, 451),
         ("3dpdf-Industrial-Saw", 64, 18, 82_660, 14),
-        ("Elysium_PDQ_Report", 17, 16, 29_512, 3),
+        ("Elysium_PDQ_Report", 17, 16, 29_512, 2),       // a style without a colour no longer makes a grey material of its own
         ("NAVAir-native-Creo", 100, 98, 87_616, 198),     // 97 markups, hidden
         // 71 markups: a node and a mesh each (of lines and triangles) and the one material they share, hidden.
         ("Native-NX-PMI", 74, 72, 48_541, 195),

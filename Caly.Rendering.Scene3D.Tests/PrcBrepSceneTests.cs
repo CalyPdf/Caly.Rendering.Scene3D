@@ -1,3 +1,4 @@
+using System.Numerics;
 using Caly.Rendering.Scene3D.Prc;
 
 namespace Caly.Rendering.Scene3D.Tests;
@@ -167,5 +168,105 @@ public sealed class PrcBrepSceneTests
         Assert.Equal(10f, minX, 1e-3);
         Assert.Equal(12f, maxX, 1e-3);
         Assert.Equal(3f, maxY, 1e-3);
+    }
+
+    /// <summary>
+    /// A body of one shell with two faces, in this order: an ana plane face (a 2 by 2 square at x = 5) and an iso plane face (a 2 by 3
+    /// rectangle at x = 0). The file stores the iso face first, then says the kind of face at each place of the shell.
+    /// </summary>
+    private static PrcBitWriter SquareThenRectangle()
+    {
+        var w = new PrcBrepWriter(0.01, 5);
+        w.BodyStart(isoVertices: 4, isoEdges: 4, singleConnex: true);
+        var square = new PrcBrepWriter.AnaLoop(true,
+            Line(BrepVertex.New(5, 0, 0), BrepVertex.New(7, 0, 0)), Line(BrepVertex.Ref(5), BrepVertex.New(7, 2, 0)),
+            Line(BrepVertex.Ref(6), BrepVertex.New(5, 2, 0)), Line(BrepVertex.Ref(7), BrepVertex.Ref(4)));
+        w.Shell(
+            (f => f.AnaFace(8, PrcBrepWriter.PlaneNormal(0, 0, true), true, [square], null, null), false),
+            (f => f.IsoFace(2, PrcBrepWriter.PlaneNormal(0, 0, true), true, true,
+                Line(BrepVertex.New(0, 0, 0), BrepVertex.New(2, 0, 0)), Line(BrepVertex.Ref(1), BrepVertex.New(2, 3, 0)),
+                third: null, fourth: null, common: BrepVertex.New(0, 3, 0)), true));
+        return w.EndBody();
+    }
+
+    /// <summary>The solid of <see cref="SquareThenRectangle"/> in a red item, with green (style 2) and blue (style 3) to give its faces.</summary>
+    private static PrcTestFile TwoFaces(params PrcTestFile.FaceGraphics[] faces)
+    {
+        var file = new PrcTestFile { ContextFaceGraphics = [faces] };
+        file.Colors.AddRange([[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+        file.Styles.AddRange([(1, -1), (4, -1), (7, -1)]);                // a colour is named by three times its index, plus one
+        file.TopologicalContexts.Add([SquareThenRectangle()]);
+        file.Parts.Add(new PrcTestFile.Part("part", "solid", 0, BiasedStyle: 1, Body: (0, 0)));
+        file.Occurrences.Add(new PrcTestFile.Occurrence("occurrence", BiasedPart: 1));
+        return file;
+    }
+
+    private static readonly Vector3 Red = new(1, 0, 0), Green = new(0, 1, 0), Blue = new(0, 0, 1);
+
+    /// <summary>The colours the triangles of the square (x beyond 4) and of the rectangle are drawn in, each once.</summary>
+    private static (Vector3[] Square, Vector3[] Rectangle) FaceColours(Scene scene)
+    {
+        SceneNode node = scene.Nodes.ToArray().Single(n => n.Mesh >= 0);
+        SceneMesh mesh = scene.Meshes[node.Mesh];
+        var square = new HashSet<Vector3>();
+        var rectangle = new HashSet<Vector3>();
+        for (int p = 0; p < mesh.PartCount; p++)
+        {
+            SceneMeshPart part = scene.Parts[mesh.FirstPart + p];
+            Vector3 colour = scene.Materials[scene.Bindings[node.FirstBinding + part.ShadingId]].Diffuse;
+            for (int i = part.IndexStart; i < part.IndexStart + part.IndexCount; i += 3)
+            {
+                float x = 0;
+                for (int k = 0; k < 3; k++)
+                {
+                    x += scene.Positions[(mesh.VertexStart + (int)scene.Indices[i + k]) * 3] / 3;
+                }
+
+                (x > 4 ? square : rectangle).Add(colour);
+            }
+        }
+
+        return ([.. square], [.. rectangle]);
+    }
+
+    [Fact]
+    public void EachFaceIsDrawnInTheStyleTheExtraGeometryGivesItInTheOrderOfTheShell()
+    {
+        using Scene scene = PrcReader.Read(TwoFaces(PrcTestFile.FaceGraphics.Style(2), PrcTestFile.FaceGraphics.Style(3)).Build(),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        (Vector3[] square, Vector3[] rectangle) = FaceColours(scene);
+
+        Assert.Equal([Green], square);                              // first in the shell, though stored second
+        Assert.Equal([Blue], rectangle);
+    }
+
+    [Fact]
+    public void AFaceThatUsesTheCurrentGraphicsHasTheLastGivenAndOneWithoutGraphicsHasItsItems()
+    {
+        using Scene current = PrcReader.Read(TwoFaces(PrcTestFile.FaceGraphics.Style(3), PrcTestFile.FaceGraphics.Current).Build(),
+            cancellationToken: TestContext.Current.CancellationToken);
+        using Scene none = PrcReader.Read(TwoFaces(PrcTestFile.FaceGraphics.None, PrcTestFile.FaceGraphics.Style(2)).Build(),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        (Vector3[] square, Vector3[] rectangle) = FaceColours(current);
+        Assert.Equal([Blue], square);
+        Assert.Equal([Blue], rectangle);
+
+        (square, rectangle) = FaceColours(none);
+        Assert.Equal([Red], square);
+        Assert.Equal([Green], rectangle);
+    }
+
+    [Fact]
+    public void FaceGraphicsThatDoNotCountTheFacesOfTheContextAreNotUsed()
+    {
+        using Scene scene = PrcReader.Read(TwoFaces(PrcTestFile.FaceGraphics.Style(2)).Build(), cancellationToken: TestContext.Current.CancellationToken);
+
+        (Vector3[] square, Vector3[] rectangle) = FaceColours(scene);
+
+        Assert.Equal([Red], square);
+        Assert.Equal([Red], rectangle);
+        Assert.True(PrcReader.IsComplete(scene));
     }
 }

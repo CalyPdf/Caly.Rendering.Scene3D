@@ -13,6 +13,9 @@
     // The exact geometry: read when an item that has no tessellation needs it (the bodies of its topological contexts).
     "PRC_TYPE_ASM_FileStructureGeometry",
 
+    // The extra geometry: read with the exact geometry, for the graphics of the faces of its bodies (a compressed body has none of its own).
+    "PRC_TYPE_ASM_FileStructureExtraGeometry",
+
     // Called by the hand-written reader of the compressed tessellation.
     "CompressedTextureParameter"
   ],
@@ -72,7 +75,15 @@
     // The tree: occurrences, parts, and the items of a part that can have a mesh.
     "PRC_TYPE_ASM_FileStructureTree": [ "parts", "products", "internal_data" ],
     "PRC_TYPE_ASM_FileStructure": [ "index_product_occurrence" ],
-    "PRC_TYPE_ASM_ProductOccurrence": [ "base", "references_product_occurrence", "product_behavior", "product_information", "location", "markups" ],
+    "PRC_TYPE_ASM_ProductOccurrence": [ "base", "references_product_occurrence", "product_behavior", "product_information", "location", "entity_reference", "markups" ],
+    // What an occurrence changes of entities under it (ISO 14739-1: "modifiers towards their nominal definition, which may include
+    // location, color, and visibility"): assemblies colour the items of their parts that way.
+    "PRC_TYPE_MISC_EntityReference": [ "content_entity_reference" ],
+    "ContentEntityReference": [ "base", "index_of_local_coordinate_system", "flag", "reference_data" ],
+    "ReferenceData": [ "data" ],
+    "PRC_TYPE_MISC_ReferenceOnPRCBase": [ "type_of_entity", "flag", "different_unique_id", "unique_id" ],
+    "PRC_TYPE_MISC_ReferenceOnTopology": [ "type_of_entity", "flag", "data" ],
+    "AdditionalTargetData": [ "*" ],
     // The markups of an occurrence (notes, dimensions): the entities each draws with are tessellations of their own kind.
     "MarkupData": [ "markups" ],
     "PRC_TYPE_MKP_Markup": [ "base", "biased_index_tessellation" ],
@@ -141,6 +152,14 @@
     "UVParameterization": [ "swap_uv", "suface_domain", "u_param_coeff_a", "v_param_coeff_a", "u_param_coeff_b", "v_param_coeff_b" ],
     "Transformation3DWithBit": [ "transformation" ],
 
+    // The extra geometry: per topological context, the graphics of each face of its bodies, in the order of the bodies and of their faces.
+    "PRC_TYPE_ASM_FileStructureExtraGeometry": [ "extra_geom" ],
+    "ExtraGeometry": [ "context_data" ],
+    "ContextGraphics": [ "treat_types" ],
+    "GraphicsInformation": [ "element_type", "treat_types" ],
+    "ElementInformation": [ "*" ],
+    "ElementGraphicsBehavior": [ "*" ],
+
     // Tessellations.
     "ContentBaseTessData": [ "coordinates" ],
     "PRC_TYPE_ASM_FileStructureTessellation": [ "tess" ],
@@ -162,7 +181,8 @@
     "Name", "ContentPRCBase", "ContentPRCRefBase", "PRC_TYPE_ROOT_PRCBaseWithGraphics", "GraphicsContent",
     "ProductOccurrenceReference", "UniqueId", "RgbColor", "Vector3D", "FileIdentifier", "ProductInformation", "MarkupData",
     "RepresentationItemContent",
-    "ControlPointsNurbsCrv", "ControlPointsNurbsSurf3", "ControlPointsNurbsSurf4", "Interval", "CoedgeInLoop", "FacesInShell", "CompositeSubCurve", "CrossingPointsCrvIntersection"
+    "ControlPointsNurbsCrv", "ControlPointsNurbsSurf3", "ControlPointsNurbsSurf4", "Interval", "CoedgeInLoop", "FacesInShell", "CompositeSubCurve", "CrossingPointsCrvIntersection",
+    "ElementInformation", "ElementGraphicsBehavior"
   ],
 
   // C# for what prc.json does in Rust at a field ("Structure.field", after the field is read) or
@@ -201,7 +221,11 @@
     "PRC_TYPE_GRAPH_TextureDefinition.number_of_texture_mapping_attributes_intensities",
     "PRC_TYPE_GRAPH_TextureDefinition.texture_dimension",
     "PRC_TYPE_GRAPH_TextureTransformation.transform_2d",
-    "PRC_TYPE_MISC_ReferenceOnTopology.type_of_entity"
+    "PRC_TYPE_MISC_ReferenceOnTopology.type_of_entity",
+    // The current graphics of the extra geometry's faces: followed by PrcFaceStyles, which reads them after the section.
+    "ElementGraphicsBehavior.biased_layer_index",
+    "ElementGraphicsBehavior.biased_index_of_line_style",
+    "ElementGraphicsBehavior.behavior_bit_field"
   ],
 
   // C# for each method of the reference's parsing context that conditions and sizes call.
@@ -218,7 +242,10 @@
   // Text of conditions that names a value inside a structure read earlier, said with what the hook of that value set.
   "rewrites": {
     "self.curve_data.is_3d_flag.value": "_ctx.ContentCurve_is_3d_flag",
-    "have_bbox(base.bounding_box_behavior.value)": "_ctx.ContentBody_has_bounding_box"
+    "have_bbox(base.bounding_box_behavior.value)": "_ctx.ContentBody_has_bounding_box",
+    "PRC_TYPE_TOPO_BrepDataCompress as u32": "PRC_TYPE_TOPO_BrepDataCompress",
+    "PRC_TYPE_TOPO_SingleWireBodyCompress as u32": "PRC_TYPE_TOPO_SingleWireBodyCompress",
+    "PRC_TYPE_TESS_3D_Compressed as u32": "PRC_TYPE_TESS_3D_Compressed"
   },
 
   // The named constants conditions use (ISO 14739-1; values as in prc-rs, src/constants.rs).
@@ -232,6 +259,9 @@
     "PRC_TRANSFORMATION_Homogeneous": 64,
     "TextureApplicationMode::AlphaTest": 2,
     "TextureMappingType::Operator": 3,
-    "TextureFunction::Blend": 3
+    "TextureFunction::Blend": 3,
+    "PRC_TYPE_TOPO_BrepDataCompress": 156,
+    "PRC_TYPE_TOPO_SingleWireBodyCompress": 155,
+    "PRC_TYPE_TESS_3D_Compressed": 173
   }
 }
