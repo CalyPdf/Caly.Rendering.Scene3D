@@ -1087,13 +1087,19 @@ internal sealed class PrcSceneBuilder
         return style - 1 < (uint)styles.Length && styles[style - 1].IsTransparency;
     }
 
+    /// <summary>
+    /// What a part has when its style gives a colour and nothing else (most parts of Tetra4D's exports), or
+    /// no style at all. The standard says nothing of how such a part shines; the pictures the exporters
+    /// drew of their models give it a white highlight about half as bright as the light, and tight enough
+    /// that a black part stays black (SpinFire's MIL-STD wheel).
+    /// </summary>
     private static SceneMaterial DefaultMaterial() => new()
     {
         Ambient = new Vector3(0.75f),
         Diffuse = new Vector3(0.75f),
-        Specular = new Vector3(0.1f),
+        Specular = new Vector3(0.5f),
         Opacity = 1,
-        Reflectivity = 0.1f,
+        Reflectivity = 0.3f,
         Flags = SceneMaterialFlags.Lit,
     };
 

@@ -1078,6 +1078,22 @@ public class PrcSceneBuilderTests
     }
 
     /// <summary>
+    /// A style that gives a colour and nothing else (most parts of Tetra4D's exports) shines with a white
+    /// highlight half as bright as the light, as the exporters' own pictures of those models do, and a tight one.
+    /// </summary>
+    [Fact]
+    public void APlainColourHasAWhiteHighlight()
+    {
+        PrcGraphStyle[] styles = [Colour(10)];
+        using Scene scene = Build(File(Structure([Occurrence("o", part: 1)], [Part("p", Solid("coloured", 1, style: 1), Solid("no style", 1))], styles: styles)));
+
+        SceneMaterial coloured = MaterialOf(scene, "coloured");
+        Assert.Equal((Yellow, Yellow, new Vector3(0.5f)), (coloured.Ambient, coloured.Diffuse, coloured.Specular));
+        Assert.Equal(0.3f, coloured.Reflectivity);
+        Assert.Equal(new Vector3(0.5f), MaterialOf(scene, "no style").Specular);
+    }
+
+    /// <summary>
     /// A writer leaves the four alphas of its materials at 0 and says in the style that they are opaque
     /// (17 payloads of the second sample set, and documents whose model then drew as nothing at all): an
     /// alpha of 0 everywhere is an alpha not given.
