@@ -282,11 +282,11 @@ internal static class PrcMesher
         ReadOnlySpan<double> coordinates,
         ReadOnlySpan<double> normalCoordinates,
         ReadOnlySpan<double> textureCoordinates,
-        int[] cornerPoint,
-        int[] cornerNormal,
-        int[] cornerTexture,
-        int[] cornerColor,
-        int[] triangleSlot,
+        Span<int> cornerPoint,
+        Span<int> cornerNormal,
+        ReadOnlySpan<int> cornerTexture,
+        ReadOnlySpan<int> cornerColor,
+        ReadOnlySpan<int> triangleSlot,
         int triangleCount,
         bool missingNormals,
         double creaseAngle,
@@ -302,7 +302,7 @@ internal static class PrcMesher
         {
             if (missingNormals)
             {
-                calculated = CalculateNormals(coordinates, cornerPoint.AsSpan(0, cornerCount), cornerNormal.AsSpan(0, cornerCount), normalCount, pointCount, creaseAngle, cancellation);
+                calculated = CalculateNormals(coordinates, cornerPoint[..cornerCount], cornerNormal[..cornerCount], normalCount, pointCount, creaseAngle, cancellation);
             }
 
             // Corners that agree on every index are one vertex; triangles are grouped by material slot.

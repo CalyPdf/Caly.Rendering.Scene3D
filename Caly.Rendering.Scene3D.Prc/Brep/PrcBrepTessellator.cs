@@ -1,4 +1,7 @@
+using System.Buffers;
+using System.Runtime.InteropServices;
 using Caly.Rendering.Scene3D.Geometry;
+using Caly.Rendering.Scene3D.Internal;
 using Caly.Rendering.Scene3D.Prc.Generated;
 using Caly.Rendering.Scene3D.Prc.Tessellation;
 
@@ -33,7 +36,7 @@ internal static class PrcBrepTessellator
     public static PrcMesh AddMesh(SceneBuilder builder, PrcTopoBrepDataCompress brep, int name, out PrcBrepTessellation result, double scale = 1,
         CancellationToken cancellation = default, PrcFaceGraphics[]? faceGraphics = null)
     {
-        var work = new Work(brep, builder.Limits.MaxIndices, cancellation);
+        using var work = new Work(brep, builder.Limits.MaxIndices, cancellation);
         work.Run();
         result = work.Result;
         int triangles = result.Triangles;
@@ -47,7 +50,7 @@ internal static class PrcBrepTessellator
             throw new Scene3DException(Scene3DError.LimitExceeded, $"The scene has more than {builder.Limits.MaxIndices} indices.");
         }
 
-        double[] points = work.Points;
+        Span<double> points = work.Points;
         if (scale != 1)
         {
             for (int i = 0; i < points.Length; i++)
@@ -56,37 +59,48 @@ internal static class PrcBrepTessellator
             }
         }
 
-        int[] corners = work.Corners;
-        int[] none = new int[corners.Length];
-        none.AsSpan().Fill(-1);
-        PrcFaceGraphics[] slots = Slots(faceGraphics, work.TriangleFaces, out int[] triangleSlot);
-        return PrcMesher.Emit(
-            builder,
-            name,
-            SceneMeshFlags.HasNormals,
-            slots,
-            points,
-            work.Normals,
-            default,
-            corners,
-            corners,
-            none,
-            none,
-            triangleSlot,
-            triangles,
-            missingNormals: false,
-            creaseAngle: 0,
-            anyColor: false,
-            cancellation);
+        // The work's own buffers are handed over as they are, and the two of no corner and the slots are rented: a body's mesh is
+        // large, and arrays of its size are not made and thrown away once per body.
+        Span<int> corners = work.Corners;
+        int[] none = ArrayPool<int>.Shared.Rent(corners.Length);
+        int[] triangleSlot = ArrayPool<int>.Shared.Rent(triangles);
+        try
+        {
+            none.AsSpan(0, corners.Length).Fill(-1);
+            PrcFaceGraphics[] slots = Slots(faceGraphics, work.TriangleFaces, triangleSlot.AsSpan(0, triangles));
+            return PrcMesher.Emit(
+                builder,
+                name,
+                SceneMeshFlags.HasNormals,
+                slots,
+                points,
+                work.Normals,
+                default,
+                corners,
+                corners,
+                none,
+                none,
+                triangleSlot,
+                triangles,
+                missingNormals: false,
+                creaseAngle: 0,
+                anyColor: false,
+                cancellation);
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(none);
+            ArrayPool<int>.Shared.Return(triangleSlot);
+        }
     }
 
     /// <summary>
     /// The material slots of the faces' graphics: each graphics with a style once, in the order of the faces that have them, as slot 1
-    /// on; and the slot of each triangle (0 for a face without a style).
+    /// on; and the slot of each triangle (0 for a face without a style) in <paramref name="triangleSlot"/>, as long as <paramref name="triangleFaces"/>.
     /// </summary>
-    internal static PrcFaceGraphics[] Slots(PrcFaceGraphics[]? faceGraphics, int[] triangleFaces, out int[] triangleSlot)
+    internal static PrcFaceGraphics[] Slots(PrcFaceGraphics[]? faceGraphics, ReadOnlySpan<int> triangleFaces, Span<int> triangleSlot)
     {
-        triangleSlot = new int[triangleFaces.Length];
+        triangleSlot.Clear();
         if (faceGraphics is null)
         {
             return [];
@@ -161,7 +175,7 @@ internal static class PrcBrepTessellator
     }
 
 
-    private sealed class Work
+    private sealed class Work : IDisposable
     {
         private readonly PrcTopoBrepDataCompress _body;
         private PrcEdgeSampler _edges;
@@ -169,10 +183,21 @@ internal static class PrcBrepTessellator
         private readonly CancellationToken _cancellation;
         private readonly long _maxIndices;
         private readonly Dictionary<PrcNurbs, (int[] U, int[] V)> _steps = new(ReferenceEqualityComparer.Instance);
-        private readonly List<double> _points = [];
-        private readonly List<double> _normals = [];
-        private readonly List<int> _corners = [];
-        private readonly List<int> _triangleFaces = [];
+        // What the faces make, three numbers per point and per normal, three corners per triangle; rented (never copied: mutable structs).
+        private PooledBuffer<double> _points;
+        private PooledBuffer<double> _normals;
+        private PooledBuffer<int> _corners;
+        private PooledBuffer<int> _triangleFaces;
+
+        // What cutting one polygon works in, kept from face to face (cleared on entry: a polygon cut again after its loops were untangled
+        // is cut only once the first attempt is done with them).
+        private readonly List<double> _gridU = [];
+        private readonly List<double> _gridV = [];
+        private readonly List<double> _xy = [];
+        private readonly List<int> _loopStarts = [];
+        private readonly List<(double U, double V)> _interior = [];
+        private readonly List<int> _cut = [];
+        private int[] _vertexOf = [];
         private readonly ConstrainedTriangulator _triangulator = new();
         private int _faces, _dropped, _unsupported;
         private bool _capped;
@@ -186,14 +211,23 @@ internal static class PrcBrepTessellator
             _edges = new PrcEdgeSampler(body, _chord);
         }
 
-        public double[] Points => [.. _points];
+        /// <summary>The points made, three numbers each; valid until the work is disposed.</summary>
+        public Span<double> Points => _points.Span;
 
-        public double[] Normals => [.. _normals];
+        public Span<double> Normals => _normals.Span;
 
-        public int[] Corners => [.. _corners];
+        public Span<int> Corners => _corners.Span;
 
         /// <summary>The face (its number in the body) each triangle was cut from.</summary>
-        public int[] TriangleFaces => [.. _triangleFaces];
+        public Span<int> TriangleFaces => _triangleFaces.Span;
+
+        public void Dispose()
+        {
+            _points.Return();
+            _normals.Return();
+            _corners.Return();
+            _triangleFaces.Return();
+        }
 
         public PrcBrepTessellation Result => new(_faces, _dropped, _unsupported, _capped || _edges.Capped, _corners.Count / 3);
 
@@ -246,9 +280,9 @@ internal static class PrcBrepTessellator
             {
                 // A curve a face refers to has no points (nothing deduced it before), or its numbers do not make a surface (knots that
                 // run backwards, a degree beyond the points): the face cannot be cut, and what it began is taken back.
-                _points.RemoveRange(points, _points.Count - points);
-                _normals.RemoveRange(normals, _normals.Count - normals);
-                _corners.RemoveRange(corners, _corners.Count - corners);
+                _points.Truncate(points);
+                _normals.Truncate(normals);
+                _corners.Truncate(corners);
                 unresolved = e is InvalidOperationException && e.Message.StartsWith("A curve without ends", StringComparison.Ordinal);
                 status = Status.Dropped;
             }
@@ -551,6 +585,14 @@ internal static class PrcBrepTessellator
                 return false;           // (chaining is quadratic in the sides: a loop of tens of thousands is not a real one)
             }
 
+            int samples = 0;
+            foreach (int curve in curves)
+            {
+                samples += _edges.Samples(curve).Length;
+            }
+
+            loop.Points.EnsureCapacity(samples);
+
             // The sides of a loop are listed in no particular order (a face's sides may share a vertex before the loop reaches it): the
             // loop is followed from the first one, each time to the unused side that starts (or ends) nearest to where it has got to.
             double closeTolerance = 10 * _chord;
@@ -692,6 +734,8 @@ internal static class PrcBrepTessellator
 
             double maxDistance = 50 * _chord;
             double hintU = 0, hintV = 0;
+            loop.U.EnsureCapacity(loop.Points.Count);
+            loop.V.EnsureCapacity(loop.Points.Count);
             for (int i = 0; i < loop.Points.Count; i++)
             {
                 if (!surface.TryInvert(loop.Points[i], hintU, hintV, maxDistance, out double u, out double v))
@@ -1463,7 +1507,7 @@ internal static class PrcBrepTessellator
                 // An angle's length grows with the radius: take it where it is greatest in the loop's box (its ends, its middle, and the equator
                 // of a sphere, if the box crosses it: at a pole, where the loop may end, a turn has no length at all).
                 scaleU = 0;
-                foreach (double v in new[] { minV, maxV, (minV + maxV) / 2, Math.Clamp(0, minV, maxV) })
+                foreach (double v in (ReadOnlySpan<double>)[minV, maxV, (minV + maxV) / 2, Math.Clamp(0, minV, maxV)])
                 {
                     surface.Evaluate((minU + maxU) / 2, v, out PrcVector a, out _);
                     scaleU = Math.Max(scaleU, Math.Sqrt(a.LengthSquared()));
@@ -1473,8 +1517,9 @@ internal static class PrcBrepTessellator
             }
 
             double width = maxU - minU, height = maxV - minV;
-            var gridU = new List<double>();
-            var gridV = new List<double>();
+            List<double> gridU = _gridU, gridV = _gridV;
+            gridU.Clear();
+            gridV.Clear();
             if (surface.Kind == PrcSurfaceKind.Nurbs)
             {
                 NurbsGrid(surface.Nurbs!, minU, maxU, minV, maxV, gridU, gridV);
@@ -1496,9 +1541,12 @@ internal static class PrcBrepTessellator
             }
 
             // The points of the loops first (the triangulator takes them as the polygon), then the grid points inside.
-            var xy = new List<double>();
-            var loopStarts = new List<int>();
-            var vertexOfPoint = new List<int>();
+            List<double> xy = _xy;
+            List<int> loopStarts = _loopStarts;
+            List<(double U, double V)> interior = _interior;
+            xy.Clear();
+            loopStarts.Clear();
+            interior.Clear();
             foreach (Loop l in loops)
             {
                 loopStarts.Add(xy.Count / 2);
@@ -1513,7 +1561,6 @@ internal static class PrcBrepTessellator
             loopStarts.Add(boundaryPoints);
             double cellU = gridU.Count > 0 ? width / (gridU.Count + 1) : width, cellV = gridV.Count > 0 ? height / (gridV.Count + 1) : height;
             double margin = 0.3 * Math.Min(cellU * scaleU, cellV * scaleV);
-            var interior = new List<(double U, double V)>();
             for (int i = 0; i < gridU.Count; i++)
             {
                 for (int j = 0; j < gridV.Count; j++)
@@ -1530,17 +1577,22 @@ internal static class PrcBrepTessellator
                 }
             }
 
-            var triangles = new List<int>();
+            List<int> triangles = _cut;
             int pointCount = xy.Count / 2;
-            if (!_triangulator.Triangulate([.. xy], [.. loopStarts], loops.Count, pointCount, (int)Math.Min(400L * pointCount + 100_000, int.MaxValue), triangles))
+            if (!_triangulator.Triangulate(CollectionsMarshal.AsSpan(xy), CollectionsMarshal.AsSpan(loopStarts), loops.Count, pointCount, (int)Math.Min(400L * pointCount + 100_000, int.MaxValue), triangles))
             {
                 // A loop that folds over itself by a sliver (an edge just off its patch): the sliver cut out, once.
                 return !untangled && Untangle(loops) && CutPolygon(face, surface, loops, untangled: true);
             }
 
             // The corners: the points of the loops are the points of the edges themselves.
-            var vertex = new int[pointCount];
-            Array.Fill(vertex, -1);
+            if (_vertexOf.Length < pointCount)
+            {
+                _vertexOf = new int[Math.Max(pointCount, 2 * _vertexOf.Length)];
+            }
+
+            int[] vertex = _vertexOf;
+            vertex.AsSpan(0, pointCount).Fill(-1);
             int Vertex(int index)
             {
                 if (vertex[index] >= 0)
@@ -1649,12 +1701,14 @@ internal static class PrcBrepTessellator
             }
 
             int index = _points.Count / 3;
-            _points.Add(position.X);
-            _points.Add(position.Y);
-            _points.Add(position.Z);
-            _normals.Add(normal.X);
-            _normals.Add(normal.Y);
-            _normals.Add(normal.Z);
+            Span<double> point = _points.AppendUninitialized(3);
+            point[0] = position.X;
+            point[1] = position.Y;
+            point[2] = position.Z;
+            Span<double> turned = _normals.AppendUninitialized(3);
+            turned[0] = normal.X;
+            turned[1] = normal.Y;
+            turned[2] = normal.Z;
             return index;
         }
 
@@ -1666,21 +1720,22 @@ internal static class PrcBrepTessellator
                 return;
             }
 
-            PrcVector pa = Point(a), pb = Point(b), pc = Point(c);
+            ReadOnlySpan<double> points = _points.Span, normals = _normals.Span;
+            PrcVector pa = At(points, a), pb = At(points, b), pc = At(points, c);
             PrcVector geometric = (pb - pa).Cross(pc - pa);
-            PrcVector normal = Normal(a) + Normal(b) + Normal(c);
+            PrcVector normal = At(normals, a) + At(normals, b) + At(normals, c);
             if (geometric.Dot(normal) < 0)
             {
                 (b, c) = (c, b);
             }
 
-            _corners.Add(a);
-            _corners.Add(b);
-            _corners.Add(c);
+            Span<int> corners = _corners.AppendUninitialized(3);
+            corners[0] = a;
+            corners[1] = b;
+            corners[2] = c;
         }
 
-        private PrcVector Point(int i) => new(_points[3 * i], _points[(3 * i) + 1], _points[(3 * i) + 2]);
-
-        private PrcVector Normal(int i) => new(_normals[3 * i], _normals[(3 * i) + 1], _normals[(3 * i) + 2]);
+        /// <summary>Point or normal <paramref name="i"/> of three numbers each.</summary>
+        private static PrcVector At(ReadOnlySpan<double> xyz, int i) => new(xyz[3 * i], xyz[(3 * i) + 1], xyz[(3 * i) + 2]);
     }
 }
