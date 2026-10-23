@@ -119,7 +119,7 @@ Point the benchmarks at your own `.u3d` and `.prc` files to measure them (see th
 
 | | |
 |---|---|
-| `Caly.Rendering.Scene3D` | The scene model, `SceneView` (a PDF 3D view: camera, lighting, what is shown), limits, `GlbWriter` |
+| `Caly.Rendering.Scene3D` | The scene model, `SceneView` (a PDF 3D view: camera, lighting, render mode, what is shown), limits, `GlbWriter` |
 | `Caly.Rendering.Scene3D.U3D` | `U3DReader` |
 | `Caly.Rendering.Scene3D.Prc` | `PrcReader`, `PrcNodeNames` (matches the part names PDF views use to the scene) |
 | `tools/Caly.Rendering.Scene3D.Tool` | `scene3d-tool`: `summary`, `glb`, `png` preview, `trace` of PRC entities |

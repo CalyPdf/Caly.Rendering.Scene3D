@@ -76,6 +76,61 @@ public readonly record struct SceneViewProjection(
     float? Near,
     float? Far);
 
+/// <summary>
+/// How a view draws the scene: its surfaces, edges or points (the render modes of ISO 32000-2, Table 319).
+/// </summary>
+public enum SceneRenderMode
+{
+    /// <summary>Lit and textured surfaces.</summary>
+    Solid,
+
+    /// <summary>Lit and textured surfaces with every edge on top, in <see cref="SceneView.EdgeColor"/>.</summary>
+    SolidWireframe,
+
+    /// <summary>Lit and textured surfaces, made more transparent.</summary>
+    Transparent,
+
+    /// <summary>Transparent surfaces with every edge on top, opaque, in <see cref="SceneView.EdgeColor"/>.</summary>
+    TransparentWireframe,
+
+    /// <summary>The edges of each node's bounding box.</summary>
+    BoundingBox,
+
+    /// <summary>The faces of each node's bounding box, transparent.</summary>
+    TransparentBoundingBox,
+
+    /// <summary>The edges and transparent faces of each node's bounding box.</summary>
+    TransparentBoundingBoxOutline,
+
+    /// <summary>Edges only, in <see cref="SceneView.EdgeColor"/>.</summary>
+    Wireframe,
+
+    /// <summary>Edges only, coloured and lit like the surfaces they bound.</summary>
+    ShadedWireframe,
+
+    /// <summary>Edges only, in <see cref="SceneView.EdgeColor"/>, without those hidden by surfaces.</summary>
+    HiddenWireframe,
+
+    /// <summary>Vertices only, in <see cref="SceneView.EdgeColor"/>.</summary>
+    Vertices,
+
+    /// <summary>Vertices only, coloured and lit.</summary>
+    ShadedVertices,
+
+    /// <summary>Silhouette edges over surfaces of one face colour, hidden lines removed.</summary>
+    Illustration,
+
+    /// <summary>
+    /// Silhouette edges, in <see cref="SceneView.EdgeColor"/>, over lit and textured surfaces, hidden lines
+    /// removed. An edge is a silhouette edge where one of its faces turns towards the viewer and the other
+    /// away, or where its faces meet at <see cref="SceneView.CreaseAngle"/> or more.
+    /// </summary>
+    SolidOutline,
+
+    /// <summary>Silhouette edges over lit and textured surfaces with an added emissive term.</summary>
+    ShadedIllustration
+}
+
 /// <summary>What a view changes about the nodes of one name. Null leaves that aspect as the scene has it.</summary>
 /// <param name="Name">The node's name; every node of that name is affected.</param>
 /// <param name="Visible">Whether the node is drawn: this node, not those under it.</param>
@@ -114,6 +169,27 @@ public sealed class SceneView
 
     /// <summary>The lights to use.</summary>
     public SceneLighting Lighting { get; init; } = SceneLighting.Artwork;
+
+    /// <summary>How the scene is drawn: surfaces, edges, points.</summary>
+    public SceneRenderMode RenderMode { get; init; } = SceneRenderMode.Solid;
+
+    /// <summary>The colour of the edges and points <see cref="RenderMode"/> draws; black unless the view says otherwise.</summary>
+    public Vector3 EdgeColor { get; init; }
+
+    /// <summary>
+    /// In degrees: two faces that meet at this angle or more (between their normals) have a silhouette edge
+    /// between them, in the render modes that draw silhouettes. 45 unless the view says otherwise.
+    /// </summary>
+    public float CreaseAngle { get; init; } = 45;
+
+    /// <summary>
+    /// The colour of surfaces in the render modes that paint them in one colour (Illustration, the faces of
+    /// bounding boxes); null for the background colour.
+    /// </summary>
+    public Vector3? FaceColor { get; init; }
+
+    /// <summary>The opacity, 0 to 1, of the transparency the transparent render modes add. 0.5 unless the view says otherwise.</summary>
+    public float Opacity { get; init; } = 0.5f;
 
     /// <summary>Per-node changes this view makes.</summary>
     public IReadOnlyList<SceneNodeOverride> NodeOverrides { get; init; } = [];
