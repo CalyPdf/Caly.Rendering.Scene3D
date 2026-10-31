@@ -5,10 +5,7 @@
 
 Click a 3D model in a PDF and something has to read it. Scene3D is that something.
 
-Engineering PDFs ship whole products inside them (assemblies, exploded views, PMI, animated work
-instructions) in two binary formats almost nothing outside Acrobat can open: **U3D** (ECMA-363) and **PRC**
-(ISO 14739-1). Scene3D decodes both into one clean, GPU-ready scene, in managed code you can drop into any
-.NET app. It powers the 3D view of the [Caly](https://github.com/BobLd/Caly) PDF reader.
+Engineering PDFs ship whole products inside them (assemblies, exploded views, PMI, animated work instructions) in two binary formats almost nothing outside Acrobat can open: **U3D** (ECMA-363) and **PRC** (ISO 14739-1). Scene3D decodes both into one clean, GPU-ready scene, in managed code you can drop into any .NET app. It powers the 3D view of the [Caly](https://github.com/BobLd/Caly) PDF reader.
 
 - **Zero dependencies.** Base class library only. `net8.0` and `net10.0`, AOT- and trim-compatible.
 - **Fast.** Vertex arrays are read straight out of the file into pooled buffers: nothing is allocated per
@@ -44,11 +41,7 @@ using var glb = File.Create("part.glb");
 GlbWriter.Write(scene, glb);                          // open it in any glTF viewer
 ```
 
-Rendering it yourself? A `Scene` is flat arrays linked by index: walk `scene.Nodes` (parents first), take
-each node's `scene.GetWorldMatrix(i)` and its `scene.Meshes[node.Mesh]`, whose vertices live in
-`Positions`, `Normals`, `TexCoords` and `Colors` and whose triangles in `Indices`, each part with its
-material. Upload, call `scene.ReleaseGeometry()` to drop the vertex data and keep the tree, and dispose the
-scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped.
+Rendering it yourself? A `Scene` is flat arrays linked by index: walk `scene.Nodes` (parents first), take each node's `scene.GetWorldMatrix(i)` and its `scene.Meshes[node.Mesh]`. A mesh points into arrays the whole scene shares: its vertices are ranges of `scene.Positions`, `Normals`, `TexCoords` and `Colors`, and its parts (`scene.Parts`) are runs of `scene.Indices`, each with the material the node's `scene.Bindings` give it. Upload, call `scene.ReleaseGeometry()` to drop the vertex data and keep the tree, and dispose the scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped.
 
 ## What it reads
 
@@ -83,24 +76,19 @@ scene when you are done. `Scene.Diagnostics` tells you anything a reader skipped
 ### PRC: not supported
 
 - Wires and points
-- B-rep faces on blend, revolution, extrusion and offset surfaces, and the rare face whose edges do not lie on
-  its surface (counted in `Scene.Diagnostics`)
+- B-rep faces on any surface other than a plane, cylinder, cone, sphere, torus or NURBS (blend, revolution, extrusion, offset, ruled, pipe, transformed...), and the rare face whose edges do not lie on its surface (counted in `Scene.Diagnostics`)
 - Markup symbol and picture entities, markups placed on the screen (billboard, fixed-size, frame-draw blocks), leaders, markups of PRC views, real fonts (text is drawn in a stroke font of the library)
 - The views and cameras stored in the PRC file itself
 - Pictures stored as raw pixels; line styles and patterns
-- Colours of single faces of uncompressed B-rep bodies (those of compressed bodies are read), and those an assembly gives single
-  faces of solids drawn from their B-rep rather than their mesh (counted in `Scene.Diagnostics`)
-- Projected and surface-mapped textures, blend and decal texture functions
+- Colours of single faces of uncompressed B-rep bodies (those of compressed bodies are read), and those an assembly gives single faces of solids drawn from their B-rep rather than their mesh (counted in `Scene.Diagnostics`)
+- What an assembly says of the edges and vertices of its parts, or of faces it moves (counted in `Scene.Diagnostics`)
+- Textures after the first of a material, projected and surface-mapped textures, blend and decal texture functions
 
-A PRC part whose compressed mesh cannot be decoded is left out, and `PrcReader.IsComplete(scene)` says so.
+A PRC part whose compressed mesh or exact geometry cannot be decoded is left out, and `PrcReader.IsComplete(scene)` says so.
 
 ## Built for untrusted input
 
-3D streams come out of PDFs from anywhere. Before anything is allocated, every count is checked against
-what the stream can still hold. `SceneLimits` caps vertices, indices, nodes, meshes, textures and total
-bytes (inflated PRC sections included), and loops, runaway nesting and cancellation are handled. Whatever
-is wrong with a file, you get a `Scene3DException` saying what, never a crash. The readers and the
-compressed decoders are fuzzed in the test suite.
+3D streams come out of PDFs from anywhere. Before anything is allocated, every count is checked against what the stream can still hold. `SceneLimits` caps vertices, indices, nodes, meshes, textures and total bytes (inflated PRC sections included), and loops, runaway nesting and cancellation are handled. Whatever is wrong with a file, you get a `Scene3DException` saying what, never a crash. The readers and the compressed decoders are fuzzed in the test suite.
 
 ## Speed
 
@@ -132,8 +120,8 @@ Point the benchmarks at your own `.u3d` and `.prc` files to measure them (see th
 | [prc-rs](https://github.com/ralovich/prc-rs) by Kristóf Ralovich (MIT) | The machine-readable PRC schema the PRC entity readers are generated from, ported bit-level decoders, test vectors, and an independent reader the PRC reader is checked against |
 | [Universal 3D Sample Software](https://github.com/ningfei/u3d) (Apache-2.0) | The U3D test scenes, and the reference decoder's arithmetic where ECMA-363 is silent |
 | Adobe, *U3D Supported Elements* | The layout of Acrobat 3D's vendor mesh |
-| [PDF Association](https://pdfa.org) PRC issues | Errata to ISO 14739-1 and the compressed-mesh decoding outline |
-| [xUnit](https://xunit.net), [BenchmarkDotNet](https://benchmarkdotnet.org) | Tests and benchmarks (not shipped) |
+| [PDF Association](https://github.com/pdf-association/pdf-issues/issues?q=label%3APRC) PRC issues | Errata to ISO 14739-1 and the compressed-mesh decoding outline |
+| [xUnit](https://xunit.net), [BenchmarkDotNet](https://benchmarkdotnet.org) | Tests and benchmarks |
 
 Details in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
