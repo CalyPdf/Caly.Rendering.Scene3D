@@ -8,7 +8,7 @@ namespace Caly.Rendering.Scene3D.Prc.Brep;
 /// they hold as plain arrays. The structures are those of prc.json (prc-rs, MIT; see THIRD-PARTY-NOTICES.md), with what the
 /// PDF Association issues correct of the draft: the widths and tolerances of compressed points (#706), where the type of a
 /// circle is left out (#582), that a composite curve always has its ends (#583), the sentinels that end the loops of an ana face
-/// (#696), and the two caches that vertices and curves are numbered in (#705).
+/// (#696), and the two caches that vertices and curves are numbered in (#705, #847).
 /// <para>
 /// A vertex or curve is stored by the first face that needs it and referred to by its index afterwards. The index counts in the
 /// cache of the kind of face that stored the entity: the vertices stored by iso faces are numbered from 0, those stored by ana
