@@ -6,9 +6,10 @@ namespace Caly.Rendering.Scene3D.U3D;
 /// Reads Universal 3D (ECMA-363) files into a <see cref="Scene"/>.
 /// <para>
 /// Covered: the scene graph (group, model, light and view nodes), lights, cameras, materials, shaders,
-/// textures (carried as their encoded images) and the base level of continuous-level-of-detail meshes.
-/// Progressive mesh detail, point and line sets, animation and extensions are skipped and listed in
-/// <see cref="Scene.Diagnostics"/>. External files and URLs are never opened.
+/// textures (carried as their encoded images), meshes at full progressive detail, point and line sets,
+/// node and skeletal animation, and Acrobat 3D's vendor mesh (<c>RHAdobeMeshResource</c>).
+/// Subdivision, CLOD-level and glyph modifiers, other extensions and file references are skipped and
+/// listed in <see cref="Scene.Diagnostics"/>. External files and URLs are never opened.
 /// </para>
 /// </summary>
 public static class U3DReader
