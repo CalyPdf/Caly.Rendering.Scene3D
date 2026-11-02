@@ -179,12 +179,11 @@ internal sealed partial class U3DDocument
         foreach (string startName in _nodeOrder)
         {
             NodeDeclaration start = _nodes[startName];
-            if (state.ContainsKey(start))
+            if (!state.TryAdd(start, 1))
             {
                 continue;
             }
 
-            state[start] = 1;
             path.Push((start, 0));
             while (path.Count > 0)
             {

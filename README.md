@@ -51,7 +51,7 @@ Rendering it yourself? A `Scene` is flat arrays linked by index: walk `scene.Nod
 | Triangle meshes | ✅ full detail, progressive meshes included | ✅ plain and compressed |
 | Exact geometry (B-rep) triangulated | — | ✅ planes, cylinders, cones, spheres, tori, NURBS; colours of single faces of compressed bodies |
 | Lines and points | ✅ line sets, point sets | ❌ wires and points |
-| Materials, colours, transparency | ✅ | ✅ with PRC's style inheritance, and the colours, removals and placements an assembly gives the items (and colours the single faces) of its parts |
+| Materials, colours, transparency | ✅ whatever kinds of geometry a shading modifier names | ✅ with PRC's style inheritance, and the colours, removals and placements an assembly gives the items (and colours the single faces) of its parts |
 | Vertex colours | ✅ diffuse | ✅ |
 | Textures (JPEG, PNG; TIFF in U3D) | ✅ first layer | ✅ with their 2D transform and wrapping |
 | Lights | ✅ | ❌ |
