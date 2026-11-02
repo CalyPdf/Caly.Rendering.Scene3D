@@ -358,8 +358,26 @@ public class U3DMaterialTests
         Assert.Empty(Bindings(scene, "Other"));
     }
 
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(4u)]
+    public void AShadingModifierAppliesWhateverKindsItsAttributesName(uint attributes)
+    {
+        byte[] file = TwoShaders()
+            .ModifierChain("Box", TestU3D.NodeChain, chain => chain
+                .ModelNode("Box", "BoxMesh", ("", Matrix4x4.Identity))
+                .ShadingModifier("Box", attributes, ["RedShader"]))
+            .ModifierChain("BoxMesh", TestU3D.ModelResourceChain, chain => chain.ShadingModifier("BoxMesh", attributes, ["Orphan"]))
+            .ModelNode("Inherits", "BoxMesh", ("", Matrix4x4.Identity))
+            .ToArray();
+
+        using Scene scene = U3DReader.Read(file, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal([MaterialNamed(scene, "RedShader")], Bindings(scene, "Box"));
+        Assert.Equal([MaterialNamed(scene, "Orphan")], Bindings(scene, "Inherits"));
+    }
+
     [Fact]
-    public void AShadingModifierNotForMeshesIsIgnored()
+    public void TheLastShadingModifierOfAChainWins()
     {
         byte[] file = TwoShaders()
             .ModifierChain("Box", TestU3D.NodeChain, chain => chain
@@ -369,7 +387,8 @@ public class U3DMaterialTests
             .ToArray();
 
         using Scene scene = U3DReader.Read(file, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Equal([MaterialNamed(scene, "RedShader")], Bindings(scene, "Box"));
+        int orphan = MaterialNamed(scene, "Orphan");
+        Assert.Equal([orphan, orphan], Bindings(scene, "Box"));
     }
 
     [Fact]

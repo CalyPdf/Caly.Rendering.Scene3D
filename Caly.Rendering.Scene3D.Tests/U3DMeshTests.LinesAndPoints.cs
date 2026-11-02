@@ -64,15 +64,11 @@ public partial class U3DMeshTests
         }
     }
 
-    /// <summary>
-    /// A shading modifier says which kinds of geometry it is for (1 meshes, 2 lines, 4 points): a line set
-    /// takes the shaders of one for lines and not of one for points. The sample's own modifier is for
-    /// everything; its attributes are rewritten here.
-    /// </summary>
     [Theory]
-    [InlineData(2u, "Box010")]
-    [InlineData(4u, "")]
-    public void ALineSetTakesTheShaderOfAShadingModifierForLines(uint attributes, string material)
+    [InlineData(0u)]
+    [InlineData(2u)]
+    [InlineData(4u)]
+    public void ALineSetTakesTheShaderOfItsShadingModifierWhateverItsAttributes(uint attributes)
     {
         byte[] file = TestFiles.Scene("lineset.u3d");
         int block = -1;
@@ -89,7 +85,7 @@ public partial class U3DMeshTests
 
         SceneNode node = scene.Nodes.ToArray().Single(n => n.Mesh >= 0);
         int bound = node.BindingCount > 0 ? scene.Bindings[node.FirstBinding] : 0;
-        Assert.Equal(material, scene.GetName(scene.Materials[bound].Name));
+        Assert.Equal("Box010", scene.GetName(scene.Materials[bound].Name));
     }
 
     [Theory]

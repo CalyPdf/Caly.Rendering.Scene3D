@@ -44,18 +44,15 @@ internal sealed partial class U3DDocument
     private const uint AlphaGreaterOrEqual = 0x616;
     private const uint AlphaAlways = 0x617;
 
-    // The kinds of geometry a shading modifier is for: meshes 1, lines 2, points 4 (and glyphs 8).
-    private const int ShadingKinds = 3;
-
     private const int ChainTypeModelResource = 1;
     private const int ChainTypeTexture = 2;
 
     private readonly Dictionary<string, SceneMaterial> _materialResources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ShaderDeclaration> _shaders = new(StringComparer.Ordinal);
     private readonly List<string> _shaderOrder = [];
-    // By (name, kind of geometry): a chain may hold one modifier for its mesh and another for lines.
-    private readonly Dictionary<(string Name, int Kind), ShadingDeclaration> _nodeShading = [];
-    private readonly Dictionary<(string Name, int Kind), ShadingDeclaration> _resourceShading = [];
+    // By chain name; the last shading modifier of a chain wins.
+    private readonly Dictionary<string, ShadingDeclaration> _nodeShading = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ShadingDeclaration> _resourceShading = new(StringComparer.Ordinal);
 
     // Scene material of each shader, filled by BuildMaterials.
     private readonly Dictionary<string, int> _materialIndices = new(StringComparer.Ordinal);
@@ -188,7 +185,7 @@ internal sealed partial class U3DDocument
         U3DBitReader reader = OpenBlock(block);
         string name = ReadName(ref reader);
         reader.ReadU32(); // chain index
-        uint attributes = reader.ReadU32();
+        reader.ReadU32(); // shading attributes
 
         uint listCount = reader.ReadU32();
         if (listCount > (uint)(reader.RemainingBytes / 4))
@@ -221,20 +218,12 @@ internal sealed partial class U3DDocument
             }
         }
 
-        // The modifier replaces the shading of the kinds of geometry its attributes name.
         if (chainType == ChainTypeTexture)
         {
             return;
         }
 
-        var declaration = new ShadingDeclaration { FirstShaders = firstShaders, MultiPassLists = multiPass };
-        for (int kind = 0; kind < ShadingKinds; kind++)
-        {
-            if ((attributes & (1u << kind)) != 0)
-            {
-                (chainType == ChainTypeModelResource ? _resourceShading : _nodeShading)[(name, kind)] = declaration;
-            }
-        }
+        (chainType == ChainTypeModelResource ? _resourceShading : _nodeShading)[name] = new ShadingDeclaration { FirstShaders = firstShaders, MultiPassLists = multiPass };
     }
 
     /// <summary>
@@ -302,9 +291,8 @@ internal sealed partial class U3DDocument
     /// </summary>
     private (int FirstBinding, int Count) GetBindings(SceneBuilder builder, NodeDeclaration node)
     {
-        // 0 a mesh, 1 a line set, 2 a point set.
-        int kind = _sets.TryGetValue(node.Resource, out SetDeclaration? set) ? (set.Lines ? 1 : 2) : 0;
-        if (!_nodeShading.TryGetValue((node.Name, kind), out ShadingDeclaration? shading) && !_resourceShading.TryGetValue((node.Resource, kind), out shading))
+        if (!_nodeShading.TryGetValue(node.Name, out ShadingDeclaration? shading) &&
+            !_resourceShading.TryGetValue(node.Resource, out shading))
         {
             return (0, 0);
         }
