@@ -1358,4 +1358,48 @@ public class PrcSceneBuilderTests
         Assert.Equal(Matrix4x4.Identity, scene.Nodes[0].Local);
         Assert.Contains(scene.Diagnostics, d => d.Code == "prc-non-finite-transform");
     }
+
+    [Fact]
+    public void AnAssemblyDeeperThanAStackHoldsIsBuiltWithoutRecursion()
+    {
+        // With the limit raised, 20,000 levels of occurrences and under them 20,000 of sets: recursion overflowed a 256 KB stack.
+        const int levels = 20_000;
+        var occurrences = new PrcAsmProductOccurrence[levels];
+        occurrences[0] = Occurrence("leaf", part: 1);
+        for (int i = 1; i < levels; i++)
+        {
+            occurrences[i] = Occurrence("level", sons: [(uint)(i - 1)]);
+        }
+
+        PrcRiRepresentationItem item = Solid("solid", 1);
+        for (int i = 0; i < levels; i++)
+        {
+            item = Set("set", 0, Shown, item);
+        }
+
+        PrcFile file = File(Structure(occurrences, [Part("part", item)]));
+        var limits = new SceneLimits { MaxNestingDepth = (2 * levels) + 1 };
+        Scene? scene = null;
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                scene = Build(file, limits);
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
+        }, 256 * 1024);
+        thread.Start();
+        thread.Join();
+
+        Assert.Null(failure);
+        using (scene)
+        {
+            Assert.Equal((2 * levels) + 1, scene!.Nodes.Length);
+            Assert.Equal(1, scene.Nodes.ToArray().Count(n => n.Mesh >= 0));
+        }
+    }
 }

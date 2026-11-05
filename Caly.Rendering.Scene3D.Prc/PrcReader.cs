@@ -61,6 +61,7 @@ public static class PrcReader
     /// <param name="cancellationToken">Stops the reading.</param>
     /// <exception cref="Scene3DException">The data is not PRC, is damaged, or exceeds the limits.</exception>
     /// <exception cref="OperationCanceledException">The reading was cancelled.</exception>
+    /// <exception cref="OutOfMemoryException">The process ran out of memory; the file is not judged by it.</exception>
     public static Scene Read(ReadOnlyMemory<byte> data, SceneLimits? limits = null, CancellationToken cancellationToken = default)
     {
         limits ??= SceneLimits.Default;
@@ -84,11 +85,8 @@ public static class PrcReader
         {
             throw;
         }
-        catch (OutOfMemoryException e)
-        {
-            throw new Scene3DException(Scene3DError.LimitExceeded, "The PRC file needs more memory than is available.", e);
-        }
-        catch (Exception e)
+        // Running out of memory says nothing of the file (another attempt may succeed), so it is not turned into a verdict on it.
+        catch (Exception e) when (e is not OutOfMemoryException)
         {
             // Last line of defence so that callers have one exception type to handle. Reaching it is a
             // defect in the reader: the fuzz tests fail on an inner exception of another kind.

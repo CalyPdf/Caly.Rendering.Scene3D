@@ -269,4 +269,59 @@ public sealed class PrcBrepSceneTests
         Assert.Equal([Red], rectangle);
         Assert.True(PrcReader.IsComplete(scene));
     }
+
+    [Fact]
+    public void TheDeepestAssemblyWithABrepAtItsBottomFitsInASmallStack()
+    {
+        // The deepest a file can go: occurrences and sets as deep as the limits let it, and under them a
+        // solid whose edge is a chain of inline composite curves as deep as the sampler takes. Caly's threads have 1.5 MB.
+        // The deepest the limits let through (one more of any is refused): 123 sets (each two entities deep, under the reader's 256),
+        // 133 occurrences over them (the builder's 256), an edge 63 composites deep (the sampler's 64). With the builder still recursive it needed about 0.6 MB.
+        const int sets = 123, occurrences = 133, composites = 63, stack = 1024 * 1024;
+        Action<PrcBrepWriter> edge = m => m.NewCurve(n => n.Line(BrepVertex.Ref(0), BrepVertex.Ref(1)));
+        for (int i = 1; i < composites; i++)
+        {
+            Action<PrcBrepWriter> inner = edge;
+            edge = m => m.NewCurve(n => n.Composite(BrepVertex.Ref(0), BrepVertex.Ref(1), false, inner));
+        }
+
+        Action<PrcBrepWriter> first = c => c.NewCurve(n => n.Composite(BrepVertex.New(0, 0, 0), BrepVertex.New(2, 0, 0), false, edge));
+        var w = new PrcBrepWriter(0.01, 5);
+        w.BodyStart(isoVertices: 4, isoEdges: 4, singleConnex: true);
+        w.Shell((f => f.IsoFace(2, PrcBrepWriter.PlaneNormal(0, 0, true), true, true,
+            first, Line(BrepVertex.Ref(1), BrepVertex.New(2, 3, 0)), third: null, fourth: null, common: BrepVertex.New(0, 3, 0)), true));
+
+        var file = new PrcTestFile();
+        file.TopologicalContexts.Add([w.EndBody()]);
+        file.Parts.Add(new PrcTestFile.Part("part", "solid", 0, Body: (0, 0), Sets: sets));
+        file.Occurrences.Add(new PrcTestFile.Occurrence("occurrence 0", BiasedPart: 1));
+        for (int i = 1; i < occurrences; i++)
+        {
+            file.Occurrences.Add(new PrcTestFile.Occurrence($"occurrence {i}", Children: [(uint)(i - 1)]));
+        }
+
+        byte[] bytes = file.Build();
+        Scene? scene = null;
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                scene = PrcReader.Read(bytes);
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
+        }, stack);
+        thread.Start();
+        thread.Join();
+
+        Assert.Null(failure);
+        using (scene)
+        {
+            Assert.Equal(6, scene!.Indices.Length);
+            Assert.True(PrcReader.IsComplete(scene));
+        }
+    }
 }

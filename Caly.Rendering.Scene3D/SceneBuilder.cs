@@ -139,6 +139,13 @@ public sealed class SceneBuilder : IDisposable
     public int AddNode(in SceneNode node)
     {
         ThrowIfDisposed();
+
+        // Hosts walk parent links up to the root: an earlier parent is what makes those walks end.
+        if (node.Parent < -1 || node.Parent >= _nodes.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(node), "A node's parent must be added before it (or be -1).");
+        }
+
         CheckCount(_nodes.Count, Limits.MaxNodes, "nodes");
         Charge(Unsafe.SizeOf<SceneNode>());
         return _nodes.Add(node);

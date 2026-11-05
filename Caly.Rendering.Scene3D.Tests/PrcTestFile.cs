@@ -19,9 +19,10 @@ internal sealed class PrcTestFile
     /// A part with one item. With <paramref name="Body"/> the item is a solid (<c>PRC_TYPE_RI_BrepModel</c>) whose exact
     /// geometry is that body of that topological context; without, a mesh item (<c>PRC_TYPE_RI_PolyBrepModel</c>).
     /// </summary>
-    /// <paramref name="Markups"/> are the part's own (a note of a part shows wherever the part is used).
+    /// <paramref name="Markups"/> are the part's own (a note of a part shows wherever the part is used). With <paramref name="Sets"/>
+    /// the item is inside that many sets (<c>PRC_TYPE_RI_Set</c>), each the only item of the one around it.
     public sealed record Part(string Name, string ItemName, uint BiasedTessellation, uint BiasedStyle = 0, ushort Behavior = 1, (uint Context, uint Body)? Body = null,
-        Markup[]? Markups = null);
+        Markup[]? Markups = null, int Sets = 0);
 
     public uint AuthoringVersion { get; init; } = 8137;
 
@@ -298,6 +299,12 @@ internal sealed class PrcTestFile
             }
 
             w.Unsigned(1);
+            for (int i = 0; i < part.Sets; i++)
+            {
+                Graphics(w.Unsigned(PrcType.PRC_TYPE_RI_Set), $"set {i}", 0, 1);
+                w.Unsigned(0).Unsigned(0).Unsigned(1);                                                           // no coordinate system, no tessellation; one item
+            }
+
             if (part.Body is { } body)
             {
                 Graphics(w.Unsigned(PrcType.PRC_TYPE_RI_BrepModel), part.ItemName, part.BiasedStyle, part.Behavior);
@@ -311,6 +318,11 @@ internal sealed class PrcTestFile
             }
 
             UserData(w);
+            for (int i = 0; i < part.Sets; i++)
+            {
+                UserData(w);
+            }
+
             WriteMarkups(w, part.Markups ?? []);
             w.Unsigned(0);                                                                                       // views
             UserData(w);

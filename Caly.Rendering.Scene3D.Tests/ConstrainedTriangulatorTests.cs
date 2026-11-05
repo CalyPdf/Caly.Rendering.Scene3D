@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Caly.Rendering.Scene3D.Geometry;
 
 namespace Caly.Rendering.Scene3D.Tests;
@@ -357,5 +358,36 @@ public sealed class ConstrainedTriangulatorTests
                 Assert.True(det <= 1e-15, $"point {q} inside the circumcircle of triangle {k / 3}");
             }
         }
+    }
+
+    [Fact]
+    public void ASegmentThroughManyVerticesDoesNotOverflowTheStack()
+    {
+        // A hole zig-zags along the bottom of the outer loop, touching it at n vertices: inserting that bottom segment splits it n
+        // times. Recursion per split overflowed the stack (and ended the host) from n = 6000 on caly.exe's 1.5 MB threads.
+        const int n = 20_000;
+        var p = new List<double> { 0, 0, n + 1, 0, n + 1, 3, 0, 3 };
+        for (int i = 1; i <= n; i++)
+        {
+            p.Add(i);
+            p.Add(0);
+            if (i < n)
+            {
+                p.Add(i + 0.5);
+                p.Add(1);
+            }
+        }
+
+        p.AddRange([n, 2, 1, 2]);
+        int count = p.Count / 2;
+        bool finished = false;
+        var thread = new Thread(() =>
+        {
+            new ConstrainedTriangulator().Triangulate(CollectionsMarshal.AsSpan(p), [0, 4, count], 2, count, 400 * count + 100_000, []);
+            finished = true;
+        }, 256 * 1024);
+        thread.Start();
+        thread.Join();
+        Assert.True(finished);
     }
 }
