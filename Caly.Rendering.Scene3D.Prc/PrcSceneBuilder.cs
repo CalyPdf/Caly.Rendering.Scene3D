@@ -54,6 +54,10 @@ internal sealed class PrcSceneBuilder
     private readonly Dictionary<Target, EntityOverride> _overrides = [];
     private readonly Dictionary<(int Structure, uint Context, uint Body), int> _faceOverrideBodies = [];
 
+    // The steps still to take, the next on top: a stack of its own and not recursion, as assemblies nest 256 levels deep.
+    private Work[] _work = new Work[32];
+    private int _workCount;
+
     private PrcSceneBuilder(PrcFile file, SceneBuilder builder, CancellationToken cancellation)
     {
         _file = file;
@@ -86,6 +90,28 @@ internal sealed class PrcSceneBuilder
     private readonly record struct MaterialKey(int ColorStructure, uint ColorStyle, int TransparencyStructure, uint TransparencyStyle, bool VertexColors);
 
     private readonly record struct OccurrenceId(int Structure, int Index);
+
+    private enum WorkKind : byte
+    {
+        Sons,
+        Items,
+        Markups,
+        TakeBack,
+    }
+
+    /// <summary>
+    /// A step of the way down the assembly: the sons or items still to add (from <see cref="Index"/> on), markups, or taking back
+    /// what an occurrence said of the entities under it. <see cref="List"/> is what the kind goes through: the sons' indices, the
+    /// items, the markups, or the keys to take back. Only the fields of its kind are set.
+    /// </summary>
+    private struct Work
+    {
+        public WorkKind Kind;
+        public int Structure, Index, Parent, Depth, Chosen, Configurations;
+        public Appearance Appearance;
+        public object List;
+        public string? Reference;
+    }
 
     /// <summary>The graphics an occurrence gives an entity under it: a style of the occurrence's file structure, and behaviour bits.</summary>
     /// <remarks><paramref name="Placement"/>: a coordinate system of that file structure, as its index plus one (0 for none), that places an item in its part.</remarks>
@@ -145,7 +171,7 @@ internal sealed class PrcSceneBuilder
                 throw Invalid("The PRC model file names a root that is not in the file.");
             }
 
-            AddOccurrence(new OccurrenceId(structure, (int)(root.RootIndex - 1)), -1, start, 0);
+            AddAssembly(new OccurrenceId(structure, (int)(root.RootIndex - 1)), start);
         }
 
         ReportBrepTotals();
@@ -186,6 +212,48 @@ internal sealed class PrcSceneBuilder
         return products[id.Index];
     }
 
+    /// <summary>Adds an occurrence and everything under it, in the order of the file: each subtree before the next sibling.</summary>
+    private void AddAssembly(OccurrenceId root, Appearance appearance)
+    {
+        AddOccurrence(root, -1, appearance, 0);
+        while (_workCount > 0)
+        {
+            // The step on top is changed where it is (the next son or item) or taken off; nothing below it is touched.
+            ref Work top = ref _work[_workCount - 1];
+            switch (top.Kind)
+            {
+                case WorkKind.Sons:
+                    AddNextSon(ref top);
+                    break;
+                case WorkKind.Items:
+                    AddNextItem(ref top);
+                    break;
+                case WorkKind.Markups:
+                {
+                    _workCount--;
+                    AddMarkups((PrcMkpMarkup[])top.List, top.Structure, top.Parent, top.Reference!);
+                    break;
+                }
+
+                default:
+                    _workCount--;
+                    TakeBack((List<Target>)top.List);
+                    break;
+            }
+        }
+    }
+
+    private void Push(in Work work)
+    {
+        if (_workCount == _work.Length)
+        {
+            Array.Resize(ref _work, _work.Length * 2);
+        }
+
+        _work[_workCount++] = work;
+    }
+
+    /// <summary>Adds an occurrence's node, and pushes what comes under it.</summary>
     private void AddOccurrence(OccurrenceId id, int parent, Appearance appearance, int depth)
     {
         _cancellation.ThrowIfCancellationRequested();
@@ -313,6 +381,9 @@ internal sealed class PrcSceneBuilder
             Visible = true,
         });
 
+        PrcAsmPartDefinition? part = null;
+        int partStructure = 0;
+        Appearance ofPart = appearance;
         if (partOwner is { } owner)
         {
             PrcFileStructureData structure = _file.FileStructures[owner.Structure];
@@ -322,21 +393,23 @@ internal sealed class PrcSceneBuilder
                 throw Invalid($"A PRC product occurrence refers to part {partIndex} of a file structure that has {structure.Tree.Parts.Length}.");
             }
 
-            PrcAsmPartDefinition part = structure.Tree.Parts[partIndex];
-            PrcGraphicsContent g = part.Base.GraphicsContent;
+            PrcGraphicsContent g = structure.Tree.Parts[partIndex].Base.GraphicsContent;
             if ((g.BehaviorBitField & Removed) == 0)
             {
-                Appearance ofPart = appearance;
+                part = structure.Tree.Parts[partIndex];
+                partStructure = owner.Structure;
                 Apply(ref ofPart, owner.Structure, g.BiasedIndexOfLineStyle, g.BehaviorBitField, show: true);
-                AddItems(part.RepresentationItems, owner.Structure, node, ofPart, depth + 1, reference);
-
-                // A part's own notes and dimensions show wherever it is used, named with the occurrence as its items are (the
-                // Tetra4D LandingGear's are all its part's).
-                AddMarkups(part.Markups.Markups, owner.Structure, node, reference);
             }
         }
 
-        AddMarkups(occurrence.Markups.Markups, id.Structure, node, reference);
+        // What comes under the node, pushed last first: the part's items, then its markups (a part's own notes and dimensions show
+        // wherever it is used, named with the occurrence as its items are: the Tetra4D LandingGear's are all its part's), the
+        // occurrence's markups, its sons, and last taking back what it said of the entities under it, which holds below it only (an
+        // exception ends the whole build).
+        if (overridden is not null)
+        {
+            Push(new Work { Kind = WorkKind.TakeBack, List = overridden });
+        }
 
         if (sonsOwner is { } sons)
         {
@@ -360,25 +433,62 @@ internal sealed class PrcSceneBuilder
                 }
             }
 
-            for (int i = 0; i < children.Length; i++)
+            Push(new Work
             {
-                var child = new OccurrenceId(sons.Structure, (int)children[i]);
-                int flags = (byte)Occurrence(child).ProductInformation.ProductInformationFlags;
-                Appearance ofChild = appearance;
-                if (!appearance.Withheld && ((flags & FlagView) != 0 || ((flags & FlagConfiguration) != 0 && configurations > 1 && i != chosen)))
-                {
-                    Note("prc-alternative-hidden", "A configuration or view of the PRC assembly other than the default one is in the scene, hidden.");
-                    ofChild.Withheld = true;
-                }
-
-                AddOccurrence(child, node, ofChild, depth + 1);
-            }
+                Kind = WorkKind.Sons, Structure = sons.Structure, Parent = node, Appearance = appearance, Depth = depth, List = children,
+                Chosen = chosen, Configurations = configurations,
+            });
 
             bool IsDefault(uint index) => ((byte)Occurrence(new OccurrenceId(sons.Structure, (int)index)).ProductInformation.ProductInformationFlags & FlagDefault) != 0;
         }
 
-        // What it said of the entities under it holds below it only (an exception ends the whole build).
-        foreach (Target key in overridden ?? [])
+        PushMarkups(occurrence.Markups.Markups, id.Structure, node, reference);
+        if (part is not null)
+        {
+            PushMarkups(part.Markups.Markups, partStructure, node, reference);
+            Push(new Work { Kind = WorkKind.Items, Structure = partStructure, Parent = node, Appearance = ofPart, Depth = depth + 1, List = part.RepresentationItems, Reference = reference });
+        }
+    }
+
+    /// <summary>Most occurrences have no markups: only those that do take a step.</summary>
+    private void PushMarkups(PrcMkpMarkup[] markups, int structure, int parent, string reference)
+    {
+        if (markups.Length != 0)
+        {
+            Push(new Work { Kind = WorkKind.Markups, Structure = structure, Parent = parent, List = markups, Reference = reference });
+        }
+    }
+
+    /// <summary>Adds the next of an occurrence's sons, whose steps then come before the son after it.</summary>
+    private void AddNextSon(ref Work sons)
+    {
+        uint[] children = (uint[])sons.List;
+        int i = sons.Index;
+        if (i >= children.Length)
+        {
+            _workCount--;
+            return;
+        }
+
+        // Taken from the step before anything is pushed: a push may move the stack, and the step with it.
+        sons.Index = i + 1;
+        var child = new OccurrenceId(sons.Structure, (int)children[i]);
+        int parent = sons.Parent, depth = sons.Depth + 1;
+        Appearance ofChild = sons.Appearance;
+        int flags = (byte)Occurrence(child).ProductInformation.ProductInformationFlags;
+        if (!ofChild.Withheld && ((flags & FlagView) != 0 || ((flags & FlagConfiguration) != 0 && sons.Configurations > 1 && i != sons.Chosen)))
+        {
+            Note("prc-alternative-hidden", "A configuration or view of the PRC assembly other than the default one is in the scene, hidden.");
+            ofChild.Withheld = true;
+        }
+
+        AddOccurrence(child, parent, ofChild, depth);
+    }
+
+    /// <summary>Takes back what an occurrence said of the entities under it, once all under it is added.</summary>
+    private void TakeBack(List<Target> overridden)
+    {
+        foreach (Target key in overridden)
         {
             _overrides.Remove(key);
             if (key.IsFace)
@@ -572,33 +682,45 @@ internal sealed class PrcSceneBuilder
         return true;
     }
 
-    /// <summary>The representation items of a part, or of a set of items: each that has a tessellation becomes a node showing its mesh.</summary>
-    private void AddItems(PrcRiRepresentationItem[] items, int structure, int parent, Appearance appearance, int depth, string occurrence)
+    /// <summary>
+    /// The next of the representation items of a part, or of a set of items (with a set's members before the item after it): each that
+    /// has a tessellation becomes a node showing its mesh.
+    /// </summary>
+    private void AddNextItem(ref Work items)
     {
-        if (depth > _builder.Limits.MaxNestingDepth)
+        if (items.Index == 0 && items.Depth > _builder.Limits.MaxNestingDepth)
         {
             throw new Scene3DException(Scene3DError.LimitExceeded, $"The PRC assembly is more than {_builder.Limits.MaxNestingDepth} levels deep.");
         }
 
-        foreach (PrcRiRepresentationItem item in items)
+        var list = (PrcRiRepresentationItem[])items.List;
+        if (items.Index >= list.Length)
         {
-            _cancellation.ThrowIfCancellationRequested();
-            switch (item.Data)
-            {
-                case PrcRiBrepModel solid:
-                    AddItem(solid.ItemContent, item.DataType, null, structure, parent, appearance, depth, occurrence, solid);
-                    break;
-                case PrcRiPolyBrepModel mesh:
-                    AddItem(mesh.ItemContent, item.DataType, null, structure, parent, appearance, depth, occurrence);
-                    break;
-                case PrcRiSet set:
-                    AddItem(set.ItemContent, item.DataType, set.RepresentationItems, structure, parent, appearance, depth, occurrence);
-                    break;
-                default:
-                    // Curves, wires, points, planes, coordinate systems: construction geometry, not drawn.
-                    Note("prc-item-not-shown", "Curves, points and other items of the PRC model that are not surfaces are not shown.");
-                    break;
-            }
+            _workCount--;
+            return;
+        }
+
+        // Taken from the step before anything is pushed: a push may move the stack, and the step with it.
+        PrcRiRepresentationItem item = list[items.Index++];
+        int structure = items.Structure, parent = items.Parent, depth = items.Depth;
+        Appearance appearance = items.Appearance;
+        string reference = items.Reference!;
+        _cancellation.ThrowIfCancellationRequested();
+        switch (item.Data)
+        {
+            case PrcRiBrepModel solid:
+                AddItem(solid.ItemContent, item.DataType, null, structure, parent, appearance, depth, reference, solid);
+                break;
+            case PrcRiPolyBrepModel mesh:
+                AddItem(mesh.ItemContent, item.DataType, null, structure, parent, appearance, depth, reference);
+                break;
+            case PrcRiSet set:
+                AddItem(set.ItemContent, item.DataType, set.RepresentationItems, structure, parent, appearance, depth, reference);
+                break;
+            default:
+                // Curves, wires, points, planes, coordinate systems: construction geometry, not drawn.
+                Note("prc-item-not-shown", "Curves, points and other items of the PRC model that are not surfaces are not shown.");
+                break;
         }
     }
 
@@ -646,7 +768,8 @@ internal sealed class PrcSceneBuilder
 
         if (members is not null)
         {
-            AddItems(members, structure, _builder.AddNode(node), appearance, depth + 1, occurrence);
+            // The members are added next, before the item after this set.
+            Push(new Work { Kind = WorkKind.Items, Structure = structure, Parent = _builder.AddNode(node), Appearance = appearance, Depth = depth + 1, List = members, Reference = occurrence });
             return;
         }
 

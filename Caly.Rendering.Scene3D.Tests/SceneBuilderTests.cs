@@ -341,4 +341,17 @@ public class SceneBuilderTests
         Assert.Equal(new Vector3(5, 0, 0), bounds.Min);
         Assert.Equal(new Vector3(6, 1, 0), bounds.Max);
     }
+
+    [Fact]
+    public void ANodeWhoseParentIsNotAddedYetIsRefused()
+    {
+        // Hosts walk parent links to the root; a parent added later (or the node itself) could make that walk go round for ever.
+        using var builder = new SceneBuilder();
+        SceneNode node = new() { Parent = -1, Local = Matrix4x4.Identity, Kind = SceneNodeKind.Group, Mesh = -1, Light = -1, Camera = -1, Name = builder.AddName("n"), Visible = true };
+        int root = builder.AddNode(node);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.AddNode(node with { Parent = root + 1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.AddNode(node with { Parent = -2 }));
+        Assert.Equal(1, builder.AddNode(node with { Parent = root }));
+    }
 }

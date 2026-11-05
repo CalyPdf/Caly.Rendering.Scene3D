@@ -632,11 +632,36 @@ internal sealed class ConstrainedTriangulator
     /// </summary>
     private bool InsertSegment(int a, int b)
     {
-        if (a == b)
+        // A loop, not recursion: a segment through thousands of vertices would otherwise overflow the stack, which ends the host.
+        int end = b;
+        while (a != b)
         {
-            return true;
+            if (!InsertPiece(a, end, out int vertexOnSegment))
+            {
+                return false;
+            }
+
+            if (vertexOnSegment >= 0)
+            {
+                // The piece from a to that vertex first, then on from it to b.
+                end = vertexOnSegment;
+                continue;
+            }
+
+            a = end;
+            end = b;
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Makes the segment from a to b an edge, or reports in <paramref name="vertexOnSegment"/> a vertex that lies on it, which
+    /// <see cref="InsertSegment"/> splits it at.
+    /// </summary>
+    private bool InsertPiece(int a, int b, out int vertexOnSegment)
+    {
+        vertexOnSegment = -1;
         if (!Step())
         {
             return false;
@@ -651,7 +676,6 @@ internal sealed class ConstrainedTriangulator
         // The edges the segment crosses, from a to b.
         List<(int, int)> crossing = _crossing;
         crossing.Clear();
-        int vertexOnSegment = -1;
         if (!Collect(a, b, crossing, ref vertexOnSegment))
         {
             return false;
@@ -659,7 +683,7 @@ internal sealed class ConstrainedTriangulator
 
         if (vertexOnSegment >= 0)
         {
-            return InsertSegment(a, vertexOnSegment) && InsertSegment(vertexOnSegment, b);
+            return true;
         }
 
         // Sloan: flip a crossing edge whose two triangles make a convex quadrilateral; one that is not waits for its turn again.
